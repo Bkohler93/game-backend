@@ -1,0 +1,1 @@
+go run ./cmd/matchmake/matchmakegateway/main.go
