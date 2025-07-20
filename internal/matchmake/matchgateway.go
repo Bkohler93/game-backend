@@ -8,20 +8,18 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/bkohler93/game-backend/pkg/interfacestruct"
+	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/mitchellh/mapstructure"
 	"github.com/redis/go-redis/v9"
 )
 
 type MatchGateway struct {
-	rdb    *RedisClient
-	addr   string
-	conn   *websocket.Conn
-	userId string
-}
-
-type RedisClient struct {
-	*redis.Client
+	rdb   *redis.Client
+	addr  string
+	conn  *websocket.Conn
+	msgCh chan ([]byte)
 }
 
 type Match struct {
@@ -29,19 +27,16 @@ type Match struct {
 	UserTwo string
 }
 
-func (rc *RedisClient) RequestMatch(req MatchRequest, ctx context.Context) {
-	_, err := rc.HSet(ctx, "user_pool:"+req.UserId, req).Result()
+func (m *MatchGateway) RequestMatch(req MatchRequest, ctx context.Context) {
+	data, err := interfacestruct.Interfacify(req)
 	if err != nil {
-		fmt.Printf("failed to request match - %v\n", err)
+		fmt.Printf("failed to turn match request into interface - %v\n", err)
 		return
 	}
-
-	_, err = rc.XAdd(ctx, &redis.XAddArgs{
+	_, err = m.rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: "matchmake:signal",
-		Values: map[string]interface{}{
-			"hello": "there",
-		}, //TODO add specifier to tell matchmaker what keys to pull
-		ID: "*",
+		Values: data, //TODO add specifier to tell matchmaker what keys to pull
+		ID:     "*",
 	}).Result()
 	if err != nil {
 		fmt.Printf("error signaling to start matchmaking - %v\n", err)
@@ -62,11 +57,11 @@ func NewMatchGateway(addr, redisAddr string) MatchGateway {
 		Password: "",
 		DB:       0,
 	})
-	rc := RedisClient{rdb}
 
 	return MatchGateway{
-		rdb:  &rc,
-		addr: addr,
+		rdb:   rdb,
+		addr:  addr,
+		msgCh: make(chan []byte),
 	}
 }
 
@@ -79,18 +74,30 @@ func (g *MatchGateway) Start(ctx context.Context) {
 			fmt.Printf("error trying to read match request - %v\n", err)
 			return
 		}
-		g.userId = req.UserId
-
-		g.rdb.RequestMatch(req, ctx)
+		if req.UserId.UUID() == uuid.Nil {
+			req.UserId = stringuuid.NewUserId()
+		}
+		ctx = g.SaveUserId(req, ctx)
+		g.RequestMatch(req, ctx)
 
 		g.waitForMatch(ctx)
+		time.Sleep(time.Second * 2)
 	})
 
 	fmt.Printf("listening on %s\n", g.addr)
-	err := http.ListenAndServe(":"+g.addr, nil)
+	err := http.ListenAndServe("0.0.0.0:"+g.addr, nil)
 	if err != nil {
 		log.Fatalf("error creating server - %v", err)
 	}
+}
+
+func (m *MatchGateway) SaveUserId(req MatchRequest, ctx context.Context) context.Context {
+	return context.WithValue(ctx, "userId", req.UserId)
+}
+
+func (m *MatchGateway) GetUserId(ctx context.Context) stringuuid.UserId {
+	id := ctx.Value("userId")
+	return id.(stringuuid.UserId)
 }
 
 func (g *MatchGateway) ReadRequest() (MatchRequest, error) {
@@ -101,7 +108,6 @@ func (g *MatchGateway) ReadRequest() (MatchRequest, error) {
 			return req, err
 		}
 	}
-	fmt.Println("received bytes=", bytes)
 	err = json.Unmarshal(bytes, &req)
 	if err != nil {
 		return req, err
@@ -121,10 +127,21 @@ func (g *MatchGateway) InitializeWebsocket(w http.ResponseWriter, r *http.Reques
 	conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error { conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	g.conn = conn
+
+	go g.writePump()
+}
+
+func (g *MatchGateway) writePump() {
+	for {
+		msg := <-g.msgCh
+		g.conn.WriteMessage(websocket.TextMessage, msg)
+	}
 }
 
 func (g *MatchGateway) waitForMatch(ctx context.Context) {
+	userId := g.GetUserId(ctx)
 	for {
+		fmt.Println("waiting for match to come through stream")
 		entries, err := g.rdb.XRead(ctx, &redis.XReadArgs{
 			Streams: []string{"match:made", "$"},
 			Count:   1,
@@ -137,13 +154,13 @@ func (g *MatchGateway) waitForMatch(ctx context.Context) {
 		res := entries[0].Messages[0].Values
 
 		var match MatchResponse
-		err = mapstructure.Decode(res, &match)
+		err = interfacestruct.Structify(res, &match)
 		if err != nil {
 			fmt.Printf("failed to scan {%v} into new MatchResponse - %v\n", res, err)
 			continue
 		}
 
-		if match.UserOneId == g.userId || match.UserTwoId == g.userId {
+		if match.UserOneId == userId || match.UserTwoId == userId {
 			bytes, err := json.Marshal(match)
 			if err != nil {
 				fmt.Printf("failed to encode match data - %v", err)

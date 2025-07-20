@@ -1,1 +1,1 @@
-go run ./cmd/matchmake/matchmakegateway/main.go
+go run ../cmd/matchmake/matchmakegateway/main.go

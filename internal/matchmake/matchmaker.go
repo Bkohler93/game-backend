@@ -3,8 +3,12 @@ package matchmake
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
+	"time"
 
+	"github.com/bkohler93/game-backend/pkg/interfacestruct"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -31,10 +35,8 @@ func (m *Matchmaker) AddRequest(id string, req *MatchRequest) {
 }
 
 func (m *Matchmaker) Start(ctx context.Context) {
-	fmt.Println("waiting for signal to try finding a match")
-
 	for {
-		_, err := m.rdb.XRead(ctx, &redis.XReadArgs{
+		entries, err := m.rdb.XRead(ctx, &redis.XReadArgs{
 			Streams: []string{"matchmake:signal", "$"},
 			Count:   1,
 			Block:   0,
@@ -43,9 +45,20 @@ func (m *Matchmaker) Start(ctx context.Context) {
 			fmt.Printf("failed to read from matchmake:signal stream - %v\n", err)
 			continue
 		}
-		fmt.Println("received signal to try matching players")
+		res := entries[0].Messages[0].Values
 
-		//TODO retrieve specifier from signal stream to retrieve only keys valid for match request (region, skill, etc)
+		var req MatchRequest
+		err = interfacestruct.Structify(res, &req)
+		if err != nil {
+			fmt.Printf("failed to scan {%v} into new MatchResponse - %v\n", res, err)
+			continue
+		}
+		req.TimeReceived = time.Now()
+		_, err = m.rdb.HSet(ctx, "user_pool:"+req.UserId.String(), req).Result()
+		if err != nil {
+			fmt.Printf("failed to request match - %v\n", err)
+			return
+		}
 
 		m.scanForMatches(ctx)
 	}
@@ -57,15 +70,13 @@ func (m *Matchmaker) scanForMatches(ctx context.Context) {
 	keys := []string{}
 	for {
 		//TODO use identifier (skill, region, etc) to reduce the amount of requests retrieved
-		res, cursor, err := m.rdb.Scan(ctx, cursor, "user_pool:*", 0).Result()
+		res, cursor, err := m.rdb.Scan(ctx, cursor, "user_pool:*", 100).Result() // if num keys greater than count this loops infinitely..?
 		if err != nil {
 			fmt.Printf("failed to retrieve keys - %v\n", err)
 			return
 		}
-		fmt.Println("num of keys=", len(res))
 		keys = append(keys, res...)
 		if cursor == 0 {
-			fmt.Println("finished retrieving keys")
 			break
 		}
 	}
@@ -79,25 +90,28 @@ func (m *Matchmaker) scanForMatches(ctx context.Context) {
 			fmt.Printf("failed to scan hash at key{%s} into a MatchRequest - %v\n", key, err)
 			continue
 		}
-		if req.PeerId == "" && req.UserId != "" {
+		if req.MatchedWith.UUID() == uuid.Nil && req.UserId.UUID() != uuid.Nil {
 			requests = append(requests, req)
 		}
 	}
-	fmt.Println("retrieved match requests, num of requests=", len(requests))
-
+	fmt.Println(requests)
+	slices.SortStableFunc(requests, func(a, b MatchRequest) int {
+		return a.TimeReceived.Compare(b.TimeReceived)
+	})
+	fmt.Println(requests)
 	m.makeMatches(requests, ctx)
 }
 
 func (m *Matchmaker) makeMatches(requests []MatchRequest, ctx context.Context) {
 	for i := 0; i < len(requests); i++ {
 		for j := i + 1; j < len(requests); j++ {
-			if requests[i].PeerId != "" || requests[j].PeerId != "" {
+			if requests[i].MatchedWith.UUID() != uuid.Nil || requests[j].MatchedWith.UUID() != uuid.Nil {
 				continue
 			}
 
 			if canMatch(requests[i], requests[j]) {
-				requests[i].PeerId = requests[j].UserId
-				requests[j].PeerId = requests[i].UserId
+				requests[i].MatchedWith = requests[j].UserId
+				requests[j].MatchedWith = requests[i].UserId
 
 				matchResponse := MatchResponse{
 					UserOneId:   requests[i].UserId,
@@ -107,13 +121,13 @@ func (m *Matchmaker) makeMatches(requests []MatchRequest, ctx context.Context) {
 				}
 
 				//TODO update both match requests in redis db
-				_, err := m.rdb.HSet(ctx, "user_pool:"+requests[i].UserId, requests[i]).Result()
+				_, err := m.rdb.HSet(ctx, "user_pool:"+requests[i].UserId.String(), requests[i]).Result()
 				if err != nil {
 					fmt.Printf("failed to set match request - %v\n", err)
 					return
 				}
 
-				_, err = m.rdb.HSet(ctx, "user_pool:"+requests[j].UserId, requests[j]).Result()
+				_, err = m.rdb.HSet(ctx, "user_pool:"+requests[j].UserId.String(), requests[j]).Result()
 				if err != nil {
 					fmt.Printf("failed to set match request - %v\n", err)
 					return
