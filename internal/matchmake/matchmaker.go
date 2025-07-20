@@ -36,6 +36,7 @@ func (m *Matchmaker) AddRequest(id string, req *MatchRequest) {
 
 func (m *Matchmaker) Start(ctx context.Context) {
 	for {
+		fmt.Println("Listening for new matchmaking requests")
 		entries, err := m.rdb.XRead(ctx, &redis.XReadArgs{
 			Streams: []string{"matchmake:signal", "$"},
 			Count:   1,

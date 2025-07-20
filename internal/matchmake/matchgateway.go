@@ -84,7 +84,7 @@ func (g *MatchGateway) Start(ctx context.Context) {
 		time.Sleep(time.Second * 2)
 	})
 
-	fmt.Printf("listening on %s\n", g.addr)
+	fmt.Printf("listening on %s for new matchmaking requests from clients\n", g.addr)
 	err := http.ListenAndServe("0.0.0.0:"+g.addr, nil)
 	if err != nil {
 		log.Fatalf("error creating server - %v", err)
@@ -130,7 +130,6 @@ func (g *MatchGateway) InitializeWebsocket(w http.ResponseWriter, r *http.Reques
 
 	go g.writePump()
 }
-
 func (g *MatchGateway) writePump() {
 	for {
 		msg := <-g.msgCh
