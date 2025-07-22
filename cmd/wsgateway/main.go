@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/bkohler93/game-backend/internal/matchmake"
+	"github.com/bkohler93/game-backend/internal/gateway"
 	"github.com/joho/godotenv"
 )
 
@@ -14,7 +14,7 @@ func main() {
 	loadEnv()
 	port := os.Getenv("PORT")
 	redisAddr := os.Getenv("REDIS_ADDR")
-	g := matchmake.NewMatchGateway(port, redisAddr)
+	g := gateway.NewGateway(port, redisAddr)
 
 	g.Start(ctx)
 }

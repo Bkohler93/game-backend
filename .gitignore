@@ -28,5 +28,12 @@ go.work.sum
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+
+# Terraform-related files to ignore
+*.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.backup
+*.terraform.lock.hcl

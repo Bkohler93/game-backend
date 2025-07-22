@@ -1,4 +1,4 @@
-package matchmake
+package gateway
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/bkohler93/game-backend/internal/matchmake"
 	"github.com/bkohler93/game-backend/pkg/interfacestruct"
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
 	"github.com/google/uuid"
@@ -15,7 +16,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type MatchGateway struct {
+type Gateway struct {
 	rdb   *redis.Client
 	addr  string
 	conn  *websocket.Conn
@@ -27,7 +28,7 @@ type Match struct {
 	UserTwo string
 }
 
-func (m *MatchGateway) RequestMatch(req MatchRequest, ctx context.Context) {
+func (m *Gateway) RequestMatch(req matchmake.MatchRequest, ctx context.Context) {
 	data, err := interfacestruct.Interfacify(req)
 	if err != nil {
 		fmt.Printf("failed to turn match request into interface - %v\n", err)
@@ -51,32 +52,33 @@ const (
 
 // Todo change Id's to uuid.UUID
 
-func NewMatchGateway(addr, redisAddr string) MatchGateway {
+func NewGateway(addr, redisAddr string) Gateway {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Password: "",
 		DB:       0,
 	})
 
-	return MatchGateway{
+	return Gateway{
 		rdb:   rdb,
 		addr:  addr,
 		msgCh: make(chan []byte),
 	}
 }
 
-func (g *MatchGateway) Start(ctx context.Context) {
+func (g *Gateway) Start(ctx context.Context) {
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		g.InitializeWebsocket(w, r)
 		defer g.conn.Close()
 		req, err := g.ReadRequest()
 		if err != nil {
-			fmt.Printf("error trying to read match request - %v\n", err)
+			fmt.Printf("error trying to read request - %v\n", err)
 			return
 		}
 		if req.UserId.UUID() == uuid.Nil {
 			req.UserId = stringuuid.NewUserId()
 		}
+
 		ctx = g.SaveUserId(req, ctx)
 		g.RequestMatch(req, ctx)
 
@@ -91,17 +93,17 @@ func (g *MatchGateway) Start(ctx context.Context) {
 	}
 }
 
-func (m *MatchGateway) SaveUserId(req MatchRequest, ctx context.Context) context.Context {
+func (m *Gateway) SaveUserId(req matchmake.MatchRequest, ctx context.Context) context.Context {
 	return context.WithValue(ctx, "userId", req.UserId)
 }
 
-func (m *MatchGateway) GetUserId(ctx context.Context) stringuuid.UserId {
+func (m *Gateway) GetUserId(ctx context.Context) stringuuid.UserId {
 	id := ctx.Value("userId")
 	return id.(stringuuid.UserId)
 }
 
-func (g *MatchGateway) ReadRequest() (MatchRequest, error) {
-	var req MatchRequest
+func (g *Gateway) ReadRequest() (matchmake.MatchRequest, error) {
+	var req matchmake.MatchRequest
 	_, bytes, err := g.conn.ReadMessage()
 	if err != nil {
 		if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -115,7 +117,7 @@ func (g *MatchGateway) ReadRequest() (MatchRequest, error) {
 	return req, nil
 }
 
-func (g *MatchGateway) InitializeWebsocket(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) InitializeWebsocket(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -130,14 +132,14 @@ func (g *MatchGateway) InitializeWebsocket(w http.ResponseWriter, r *http.Reques
 
 	go g.writePump()
 }
-func (g *MatchGateway) writePump() {
+func (g *Gateway) writePump() {
 	for {
 		msg := <-g.msgCh
 		g.conn.WriteMessage(websocket.TextMessage, msg)
 	}
 }
 
-func (g *MatchGateway) waitForMatch(ctx context.Context) {
+func (g *Gateway) waitForMatch(ctx context.Context) {
 	userId := g.GetUserId(ctx)
 	for {
 		fmt.Println("waiting for match to come through stream")
@@ -152,7 +154,7 @@ func (g *MatchGateway) waitForMatch(ctx context.Context) {
 		}
 		res := entries[0].Messages[0].Values
 
-		var match MatchResponse
+		var match matchmake.MatchResponse
 		err = interfacestruct.Structify(res, &match)
 		if err != nil {
 			fmt.Printf("failed to scan {%v} into new MatchResponse - %v\n", res, err)
