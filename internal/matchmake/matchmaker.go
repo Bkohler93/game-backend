@@ -7,19 +7,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bkohler93/game-backend/internal/redis"
 	"github.com/bkohler93/game-backend/pkg/interfacestruct"
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
+	goredis "github.com/redis/go-redis/v9"
 )
 
 type Matchmaker struct {
-	rdb  *redis.Client
+	rdb  *goredis.Client
 	mu   *sync.Mutex
 	pool map[string]*MatchRequest
 }
 
 func NewMatchmaker(redisAddr string) Matchmaker {
-	rdb := redis.NewClient(&redis.Options{
+	rdb := goredis.NewClient(&goredis.Options{
 		Addr:     redisAddr,
 		Password: "",
 		DB:       0,
@@ -37,17 +38,16 @@ func (m *Matchmaker) AddRequest(id string, req *MatchRequest) {
 func (m *Matchmaker) Start(ctx context.Context) {
 	for {
 		fmt.Println("Listening for new matchmaking requests")
-		entries, err := m.rdb.XRead(ctx, &redis.XReadArgs{
-			Streams: []string{"matchmake:signal", "$"},
+		entries, err := m.rdb.XRead(ctx, &goredis.XReadArgs{
+			Streams: []string{"matchmake:request", "$"},
 			Count:   1,
 			Block:   0,
 		}).Result()
 		if err != nil {
-			fmt.Printf("failed to read from matchmake:signal stream - %v\n", err)
+			fmt.Printf("failed to read from matchmake:request stream - %v\n", err)
 			continue
 		}
 		res := entries[0].Messages[0].Values
-
 		var req MatchRequest
 		err = interfacestruct.Structify(res, &req)
 		if err != nil {
@@ -55,7 +55,7 @@ func (m *Matchmaker) Start(ctx context.Context) {
 			continue
 		}
 		req.TimeReceived = time.Now()
-		_, err = m.rdb.HSet(ctx, "user_pool:"+req.UserId.String(), req).Result()
+		_, err = m.rdb.HSet(ctx, redis.MatchmakePoolUser(req.UserId), req).Result()
 		if err != nil {
 			fmt.Printf("failed to request match - %v\n", err)
 			return
@@ -71,7 +71,7 @@ func (m *Matchmaker) scanForMatches(ctx context.Context) {
 	keys := []string{}
 	for {
 		//TODO use identifier (skill, region, etc) to reduce the amount of requests retrieved
-		res, cursor, err := m.rdb.Scan(ctx, cursor, "user_pool:*", 100).Result() // if num keys greater than count this loops infinitely..?
+		res, cursor, err := m.rdb.Scan(ctx, cursor, redis.AllMatchmakePool, 100).Result() // if num keys greater than count this loops infinitely..?
 		if err != nil {
 			fmt.Printf("failed to retrieve keys - %v\n", err)
 			return
@@ -95,11 +95,9 @@ func (m *Matchmaker) scanForMatches(ctx context.Context) {
 			requests = append(requests, req)
 		}
 	}
-	fmt.Println(requests)
 	slices.SortStableFunc(requests, func(a, b MatchRequest) int {
 		return a.TimeReceived.Compare(b.TimeReceived)
 	})
-	fmt.Println(requests)
 	m.makeMatches(requests, ctx)
 }
 
@@ -120,29 +118,38 @@ func (m *Matchmaker) makeMatches(requests []MatchRequest, ctx context.Context) {
 					UserTwoId:   requests[j].UserId,
 					UserTwoName: requests[j].Name,
 				}
+				fmt.Printf("new match! - %v\n", matchResponse)
 
-				//TODO update both match requests in redis db
-				_, err := m.rdb.HSet(ctx, "user_pool:"+requests[i].UserId.String(), requests[i]).Result()
+				_, err := m.rdb.HSet(ctx, redis.MatchmakePoolUser(requests[i].UserId), requests[i]).Result()
 				if err != nil {
 					fmt.Printf("failed to set match request - %v\n", err)
 					return
 				}
 
-				_, err = m.rdb.HSet(ctx, "user_pool:"+requests[j].UserId.String(), requests[j]).Result()
+				_, err = m.rdb.HSet(ctx, redis.MatchmakePoolUser(requests[j].UserId), requests[j]).Result()
 				if err != nil {
 					fmt.Printf("failed to set match request - %v\n", err)
 					return
 				}
 
-				//TODO send match response across match:made
-				_, err = m.rdb.XAdd(ctx, &redis.XAddArgs{
-					Stream: "match:made",
+				_, err = m.rdb.XAdd(ctx, &goredis.XAddArgs{
+					Stream: redis.MatchFoundStream(matchResponse.UserOneId),
 					Values: matchResponse, //TODO add specifier to tell matchmaker what keys to pull
 					ID:     "*",
 				}).Result()
 				if err != nil {
 					fmt.Printf("error signaling to start matchmaking - %v\n", err)
 				}
+
+				_, err = m.rdb.XAdd(ctx, &goredis.XAddArgs{
+					Stream: redis.MatchFoundStream(matchResponse.UserTwoId),
+					Values: matchResponse, //TODO add specifier to tell matchmaker what keys to pull
+					ID:     "*",
+				}).Result()
+				if err != nil {
+					fmt.Printf("error signaling to start matchmaking - %v\n", err)
+				}
+				fmt.Println("sent match through streams")
 			}
 		}
 	}

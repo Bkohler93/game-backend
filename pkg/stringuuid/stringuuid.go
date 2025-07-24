@@ -4,23 +4,23 @@ import (
 	"github.com/google/uuid"
 )
 
-type UserId string
+type StringUUID string
 
-func NewUserId() UserId {
-	return UserId(uuid.New().String())
+func NewStringUUID() StringUUID {
+	return StringUUID(uuid.New().String())
 }
 
-func (id UserId) UUID() uuid.UUID {
+func (id StringUUID) UUID() uuid.UUID {
 	if id == "" {
 		return uuid.Nil
 	}
 	return uuid.MustParse(string(id))
 }
 
-func (id UserId) String() string {
+func (id StringUUID) String() string {
 	return string(id)
 }
 
-func (u UserId) MarshalBinary() (data []byte, err error) {
+func (u StringUUID) MarshalBinary() (data []byte, err error) {
 	return []byte(u.String()), nil
 }

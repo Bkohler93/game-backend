@@ -2,47 +2,18 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/matchmake"
+	"github.com/bkohler93/game-backend/internal/redis"
 	"github.com/bkohler93/game-backend/pkg/interfacestruct"
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/redis/go-redis/v9"
+	goredis "github.com/redis/go-redis/v9"
 )
-
-type Gateway struct {
-	rdb   *redis.Client
-	addr  string
-	conn  *websocket.Conn
-	msgCh chan ([]byte)
-}
-
-type Match struct {
-	UserOne string
-	UserTwo string
-}
-
-func (m *Gateway) RequestMatch(req matchmake.MatchRequest, ctx context.Context) {
-	data, err := interfacestruct.Interfacify(req)
-	if err != nil {
-		fmt.Printf("failed to turn match request into interface - %v\n", err)
-		return
-	}
-	_, err = m.rdb.XAdd(ctx, &redis.XAddArgs{
-		Stream: "matchmake:signal",
-		Values: data, //TODO add specifier to tell matchmaker what keys to pull
-		ID:     "*",
-	}).Result()
-	if err != nil {
-		fmt.Printf("error signaling to start matchmaking - %v\n", err)
-	}
-}
 
 const (
 	pongWait = 60 * time.Second
@@ -50,41 +21,50 @@ const (
 	maxMessageSize = 512
 )
 
-// Todo change Id's to uuid.UUID
+type Gateway struct {
+	rdb  *goredis.Client
+	addr string
+	hub  Hub
+}
 
 func NewGateway(addr, redisAddr string) Gateway {
-	rdb := redis.NewClient(&redis.Options{
+	rdb := goredis.NewClient(&goredis.Options{
 		Addr:     redisAddr,
 		Password: "",
 		DB:       0,
 	})
 
 	return Gateway{
-		rdb:   rdb,
-		addr:  addr,
-		msgCh: make(chan []byte),
+		rdb:  rdb,
+		addr: addr,
+		hub:  *NewHub(),
 	}
 }
 
 func (g *Gateway) Start(ctx context.Context) {
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		g.InitializeWebsocket(w, r)
-		defer g.conn.Close()
-		req, err := g.ReadRequest()
+		ctx, cf := context.WithCancel(ctx)
+		client, err := g.InitializeWebsocket(w, r)
 		if err != nil {
-			fmt.Printf("error trying to read request - %v\n", err)
+			fmt.Printf("failed to initialize client websocket - %v\n", err)
+			cf()
 			return
 		}
-		if req.UserId.UUID() == uuid.Nil {
-			req.UserId = stringuuid.NewUserId()
-		}
+		defer client.conn.Close()
 
-		ctx = g.SaveUserId(req, ctx)
-		g.RequestMatch(req, ctx)
+		g.hub.RegisterCh <- client
 
-		g.waitForMatch(ctx)
-		time.Sleep(time.Second * 2)
+		go client.writePump(ctx, cf)
+		go client.readPump(ctx, cf)
+
+		go client.listenToRedis(ctx, cf)
+
+		<-ctx.Done()
+		fmt.Println("Websocket connection closed")
+		g.hub.UnregisterCh <- client
 	})
+
+	go g.listenForMatches(ctx)
 
 	fmt.Printf("listening on %s for new matchmaking requests from clients\n", g.addr)
 	err := http.ListenAndServe("0.0.0.0:"+g.addr, nil)
@@ -93,63 +73,60 @@ func (g *Gateway) Start(ctx context.Context) {
 	}
 }
 
+// func (m *Gateway) RequestMatch(req matchmake.MatchRequest, ctx context.Context) {
+// 	data, err := interfacestruct.Interfacify(req)
+// 	if err != nil {
+// 		fmt.Printf("failed to turn match request into interface - %v\n", err)
+// 		return
+// 	}
+// 	_, err = m.rdb.XAdd(ctx, &redis.XAddArgs{
+// 		Stream: "matchmake:signal",
+// 		Values: data, //TODO add specifier to tell matchmaker what keys to pull
+// 		ID:     "*",
+// 	}).Result()
+// 	if err != nil {
+// 		fmt.Printf("error signaling to start matchmaking - %v\n", err)
+// 	}
+// }
+
+// Todo change Id's to uuid.UUID
+
 func (m *Gateway) SaveUserId(req matchmake.MatchRequest, ctx context.Context) context.Context {
 	return context.WithValue(ctx, "userId", req.UserId)
 }
 
-func (m *Gateway) GetUserId(ctx context.Context) stringuuid.UserId {
+func (m *Gateway) GetUserId(ctx context.Context) stringuuid.StringUUID {
 	id := ctx.Value("userId")
-	return id.(stringuuid.UserId)
+	return id.(stringuuid.StringUUID)
 }
 
-func (g *Gateway) ReadRequest() (matchmake.MatchRequest, error) {
-	var req matchmake.MatchRequest
-	_, bytes, err := g.conn.ReadMessage()
-	if err != nil {
-		if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-			return req, err
-		}
-	}
-	err = json.Unmarshal(bytes, &req)
-	if err != nil {
-		return req, err
-	}
-	return req, nil
-}
-
-func (g *Gateway) InitializeWebsocket(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) InitializeWebsocket(w http.ResponseWriter, r *http.Request) (*Client, error) {
+	var c *Client
 	upgrader := websocket.Upgrader{}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		fmt.Printf("could not upgrade to ws - %s\n", err)
-		return
+		return c, err
 	}
 
 	conn.SetReadLimit(maxMessageSize)
 	conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error { conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
-	g.conn = conn
+	id := stringuuid.NewStringUUID()
+	c = NewClient(conn, id, g.rdb)
 
-	go g.writePump()
-}
-func (g *Gateway) writePump() {
-	for {
-		msg := <-g.msgCh
-		g.conn.WriteMessage(websocket.TextMessage, msg)
-	}
+	return c, nil
 }
 
-func (g *Gateway) waitForMatch(ctx context.Context) {
-	userId := g.GetUserId(ctx)
+func (g *Gateway) listenForMatches(ctx context.Context) {
 	for {
 		fmt.Println("waiting for match to come through stream")
-		entries, err := g.rdb.XRead(ctx, &redis.XReadArgs{
-			Streams: []string{"match:made", "$"},
+		entries, err := g.rdb.XRead(ctx, &goredis.XReadArgs{
+			Streams: []string{redis.MatchfoundStream, "$"},
 			Count:   1,
 			Block:   0,
 		}).Result()
 		if err != nil {
-			fmt.Printf("failed to read from matchmake:signal stream - %v\n", err)
+			fmt.Printf("failed to read from matchmake:found stream - %v\n", err)
 			continue
 		}
 		res := entries[0].Messages[0].Values
@@ -160,15 +137,16 @@ func (g *Gateway) waitForMatch(ctx context.Context) {
 			fmt.Printf("failed to scan {%v} into new MatchResponse - %v\n", res, err)
 			continue
 		}
-
-		if match.UserOneId == userId || match.UserTwoId == userId {
-			bytes, err := json.Marshal(match)
-			if err != nil {
-				fmt.Printf("failed to encode match data - %v", err)
-				break
-			}
-			g.conn.WriteMessage(websocket.TextMessage, bytes)
-			break
-		}
+		g.hub.Clients[match.UserOneId].MatchmakingMsgCh <- match
+		g.hub.Clients[match.UserTwoId].MatchmakingMsgCh <- match
+		// if match.UserOneId == userId || match.UserTwoId == userId {
+		// 	bytes, err := json.Marshal(match)
+		// 	if err != nil {
+		// 		fmt.Printf("failed to encode match data - %v", err)
+		// 		break
+		// 	}
+		// 	g.conn.WriteMessage(websocket.TextMessage, bytes)
+		// 	break
+		// }
 	}
 }
