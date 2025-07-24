@@ -12,8 +12,8 @@ run_service() {
 
 # Run each service
 run_service "redis" ./matchmake/run_redis.sh "$CONTAINER_NAME"
-sleep 1
-run_service "match_gateway" ./matchmake/run_gateway.sh
+sleep 3
+run_service "gateway" ./matchmake/run_gateway.sh
 run_service "matchmaker" ./matchmake/run_matchmaker.sh
 
 cleanup() {
