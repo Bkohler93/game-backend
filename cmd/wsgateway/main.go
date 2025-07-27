@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/bkohler93/game-backend/internal/gateway"
+	"github.com/bkohler93/game-backend/internal/message"
+	"github.com/bkohler93/game-backend/internal/redis"
 	"github.com/joho/godotenv"
 )
 
@@ -14,7 +16,11 @@ func main() {
 	loadEnv()
 	port := os.Getenv("PORT")
 	redisAddr := os.Getenv("REDIS_ADDR")
-	g := gateway.NewGateway(port, redisAddr)
+
+	redisClient := redis.NewRedisClient(redisAddr, "", 0)
+	mb := message.RedisStreamClient{redisClient}
+
+	g := gateway.NewGateway(port, redisClient)
 
 	g.Start(ctx)
 }

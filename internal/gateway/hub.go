@@ -2,14 +2,12 @@ package gateway
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
 )
 
 type Hub struct {
 	Clients map[stringuuid.StringUUID]*Client
-	mu      sync.Mutex
 
 	RegisterCh   chan *Client
 	UnregisterCh chan *Client

@@ -7,26 +7,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bkohler93/game-backend/internal/message"
 	"github.com/bkohler93/game-backend/internal/redis"
-	"github.com/bkohler93/game-backend/pkg/interfacestruct"
 	"github.com/google/uuid"
-	goredis "github.com/redis/go-redis/v9"
 )
 
 type Matchmaker struct {
-	rdb  *goredis.Client
+	mb   message.MessageBus
 	mu   *sync.Mutex
 	pool map[string]*MatchRequest
 }
 
-func NewMatchmaker(redisAddr string) Matchmaker {
-	rdb := goredis.NewClient(&goredis.Options{
-		Addr:     redisAddr,
-		Password: "",
-		DB:       0,
-	})
+func NewMatchmaker(mb message.MessageBus) *Matchmaker {
 
-	return Matchmaker{rdb: rdb, mu: &sync.Mutex{}, pool: make(map[string]*MatchRequest)}
+	return &Matchmaker{mb: mb, mu: &sync.Mutex{}, pool: make(map[string]*MatchRequest)}
 }
 
 func (m *Matchmaker) AddRequest(id string, req *MatchRequest) {
@@ -38,23 +32,29 @@ func (m *Matchmaker) AddRequest(id string, req *MatchRequest) {
 func (m *Matchmaker) Start(ctx context.Context) {
 	for {
 		fmt.Println("Listening for new matchmaking requests")
-		entries, err := m.rdb.XRead(ctx, &goredis.XReadArgs{
-			Streams: []string{"matchmake:request", "$"},
-			Count:   1,
-			Block:   0,
-		}).Result()
-		if err != nil {
-			fmt.Printf("failed to read from matchmake:request stream - %v\n", err)
-			continue
-		}
-		res := entries[0].Messages[0].Values
+
+		//TODO: ReadFrom
 		var req MatchRequest
-		err = interfacestruct.Structify(res, &req)
+		err := m.mb.Consume(ctx, redis.MatchmakeRequestStream, &req)
+		// entries, err := m.rdb.XRead(ctx, &goredis.XReadArgs{
+		// 	Streams: []string{"matchmake:request", "$"},
+		// 	Count:   1,
+		// 	Block:   0,
+		// }).Result()
+		// if err != nil {
+		// 	fmt.Printf("failed to read from matchmake:request stream - %v\n", err)
+		// 	continue
+		// }
+		// res := entries[0].Messages[0].Values
+		// var req MatchRequest
+		// err = interfacestruct.Structify(res, &req)
 		if err != nil {
 			fmt.Printf("failed to scan {%v} into new MatchResponse - %v\n", res, err)
 			continue
 		}
 		req.TimeReceived = time.Now()
+
+		//TODO: Set
 		_, err = m.rdb.HSet(ctx, redis.MatchmakePoolUser(req.UserId), req).Result()
 		if err != nil {
 			fmt.Printf("failed to request match - %v\n", err)
@@ -71,6 +71,8 @@ func (m *Matchmaker) scanForMatches(ctx context.Context) {
 	keys := []string{}
 	for {
 		//TODO use identifier (skill, region, etc) to reduce the amount of requests retrieved
+
+		//TODO: RetrieveAllKeys
 		res, cursor, err := m.rdb.Scan(ctx, cursor, redis.AllMatchmakePool, 100).Result() // if num keys greater than count this loops infinitely..?
 		if err != nil {
 			fmt.Printf("failed to retrieve keys - %v\n", err)
@@ -84,6 +86,8 @@ func (m *Matchmaker) scanForMatches(ctx context.Context) {
 
 	requests := []MatchRequest{}
 	for _, key := range keys {
+
+		//TODO: GetValuesUsingKeys
 		cmdReturn := m.rdb.HGetAll(ctx, key)
 		var req MatchRequest
 
@@ -120,18 +124,21 @@ func (m *Matchmaker) makeMatches(requests []MatchRequest, ctx context.Context) {
 				}
 				fmt.Printf("new match! - %v\n", matchResponse)
 
+				//TODO: Set
 				_, err := m.rdb.HSet(ctx, redis.MatchmakePoolUser(requests[i].UserId), requests[i]).Result()
 				if err != nil {
 					fmt.Printf("failed to set match request - %v\n", err)
 					return
 				}
 
+				//TODO: Set
 				_, err = m.rdb.HSet(ctx, redis.MatchmakePoolUser(requests[j].UserId), requests[j]).Result()
 				if err != nil {
 					fmt.Printf("failed to set match request - %v\n", err)
 					return
 				}
 
+				//TODO: SendMessage
 				_, err = m.rdb.XAdd(ctx, &goredis.XAddArgs{
 					Stream: redis.MatchFoundStream(matchResponse.UserOneId),
 					Values: matchResponse, //TODO add specifier to tell matchmaker what keys to pull
@@ -141,6 +148,7 @@ func (m *Matchmaker) makeMatches(requests []MatchRequest, ctx context.Context) {
 					fmt.Printf("error signaling to start matchmaking - %v\n", err)
 				}
 
+				//TODO: SendMessage
 				_, err = m.rdb.XAdd(ctx, &goredis.XAddArgs{
 					Stream: redis.MatchFoundStream(matchResponse.UserTwoId),
 					Values: matchResponse, //TODO add specifier to tell matchmaker what keys to pull
