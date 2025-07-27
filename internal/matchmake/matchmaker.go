@@ -9,18 +9,20 @@ import (
 
 	"github.com/bkohler93/game-backend/internal/message"
 	"github.com/bkohler93/game-backend/internal/redis"
+	"github.com/bkohler93/game-backend/internal/store"
 	"github.com/google/uuid"
 )
 
 type Matchmaker struct {
 	mb   message.MessageBus
+	s    store.Store
 	mu   *sync.Mutex
 	pool map[string]*MatchRequest
 }
 
-func NewMatchmaker(mb message.MessageBus) *Matchmaker {
+func NewMatchmaker(mb message.MessageBus, s store.Store) *Matchmaker {
 
-	return &Matchmaker{mb: mb, mu: &sync.Mutex{}, pool: make(map[string]*MatchRequest)}
+	return &Matchmaker{mb: mb, s: s, mu: &sync.Mutex{}, pool: make(map[string]*MatchRequest)}
 }
 
 func (m *Matchmaker) AddRequest(id string, req *MatchRequest) {
@@ -55,7 +57,8 @@ func (m *Matchmaker) Start(ctx context.Context) {
 		req.TimeReceived = time.Now()
 
 		//TODO: Set
-		_, err = m.rdb.HSet(ctx, redis.MatchmakePoolUser(req.UserId), req).Result()
+		// _, err = m.rdb.HSet(ctx, redis.MatchmakePoolUser(req.UserId), req).Result()
+		err = m.s.StoreKeyValue(redis.MatchmakePoolUser(req.UserId), req)
 		if err != nil {
 			fmt.Printf("failed to request match - %v\n", err)
 			return
@@ -99,6 +102,7 @@ func (m *Matchmaker) scanForMatches(ctx context.Context) {
 			requests = append(requests, req)
 		}
 	}
+	requests = m.s.GetAllValuesWithKeys[MatchRequest](redis.AllMatchmakePool)
 	slices.SortStableFunc(requests, func(a, b MatchRequest) int {
 		return a.TimeReceived.Compare(b.TimeReceived)
 	})

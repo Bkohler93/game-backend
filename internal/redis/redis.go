@@ -2,7 +2,6 @@ package redis
 
 import (
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
-	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -29,20 +28,4 @@ func GameClientActionStream(gameId stringuuid.StringUUID) string {
 
 func GameServerResponseStream(userId stringuuid.StringUUID) string {
 	return GameStream + ":server:response:" + userId.String()
-}
-
-type RedisClient struct {
-	*redis.Client
-}
-
-func NewRedisClient(addr, password string, db int) *RedisClient {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: "",
-		DB:       0,
-	})
-
-	return &RedisClient{
-		rdb,
-	}
 }

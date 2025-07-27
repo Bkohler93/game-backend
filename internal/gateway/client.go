@@ -11,7 +11,6 @@ import (
 	"github.com/bkohler93/game-backend/internal/matchmake"
 	"github.com/bkohler93/game-backend/internal/message"
 	"github.com/bkohler93/game-backend/internal/redis"
-	"github.com/bkohler93/game-backend/pkg/interfacestruct"
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
 	"github.com/gorilla/websocket"
 )
@@ -21,7 +20,7 @@ type Client struct {
 	MatchmakingMsgCh chan (matchmake.MatchResponse)
 	GameMsgCh        chan (game.ServerResponse)
 	ID               stringuuid.StringUUID
-	m                *message.MessageBus
+	m                message.MessageBus
 	// rdb              *redis.RedisClient
 }
 
@@ -31,7 +30,7 @@ const (
 	pingInterval = 10
 )
 
-func NewClient(w http.ResponseWriter, r *http.Request, m *message.MessageBus) (*Client, error) {
+func NewClient(w http.ResponseWriter, r *http.Request, m message.MessageBus) (*Client, error) {
 	var c *Client
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -166,14 +165,15 @@ func (c *Client) ForwardMessageToService(msg BaseMessage, ctx context.Context, c
 
 		json.Unmarshal(msg.Payload, &action)
 		//TODO: SendMessage
-		_, err := c.rdb.XAdd(ctx, &goredis.XAddArgs{
-			Stream: redis.GameClientActionStream(action.GameID),
-			Values: action,
-			ID:     "*",
-		}).Result()
+		err := c.m.Publish(ctx, redis.GameClientActionStream(action.GameID), action)
 		if err != nil {
 			fmt.Printf("error forwarding gameplay message %v\n", err)
 		}
+		// _, err := c.rdb.XAdd(ctx, &goredis.XAddArgs{
+		// 	Stream: redis.GameClientActionStream(action.GameID),
+		// 	Values: action,
+		// 	ID:     "*",
+		// }).Result()
 	case MessageTypeMatchmaking:
 		var matchReq matchmake.MatchRequest
 		err := json.Unmarshal(msg.Payload, &matchReq)
@@ -186,14 +186,15 @@ func (c *Client) ForwardMessageToService(msg BaseMessage, ctx context.Context, c
 		matchReq.UserId = c.ID
 
 		//TODO: SendMessage
-		_, err = c.rdb.XAdd(ctx, &goredis.XAddArgs{
-			Stream: redis.MatchmakeRequestStream,
-			Values: matchReq,
-			ID:     "*",
-		}).Result()
+		err = c.m.Publish(ctx, redis.MatchmakeRequestStream, matchReq)
 		if err != nil {
 			fmt.Printf("error forwarding matchmake request %v\n", err)
 		}
+		// _, err = c.rdb.XAdd(ctx, &goredis.XAddArgs{
+		// 	Stream: redis.MatchmakeRequestStream,
+		// 	Values: matchReq,
+		// 	ID:     "*",
+		// }).Result()
 	default:
 		fmt.Println("unexpected gateway.MessageType", msg.Type)
 		connCancelFunc()
@@ -211,25 +212,27 @@ func (c *Client) listenToRedis(ctx context.Context, connCancelFunc context.Cance
 				fmt.Printf("waiting to receive match for id=%s\n", c.ID)
 
 				//TODO: ReadFromBlocking
-				entries, err := c.rdb.XRead(ctx, &goredis.XReadArgs{
-					Streams: []string{redis.MatchFoundStream(c.ID), "$"},
-					Count:   1,
-					Block:   0,
-				}).Result()
-				if err != nil {
-					fmt.Printf("failed to read from match found stream - %v\n", err)
-					continue
-				}
-				if len(entries) == 0 || len(entries[0].Messages) == 0 {
-					fmt.Printf("read from match found stream zero results")
-					continue
-				}
-				data := entries[0].Messages[0].Values
-
 				res := matchmake.NewMatchmakingResponse()
-				err = interfacestruct.Structify(data, &res)
+				err := c.m.Consume(ctx, redis.MatchFoundStream(c.ID), &res)
+				// entries, err := c.rdb.XRead(ctx, &goredis.XReadArgs{
+				// 	Streams: []string{redis.MatchFoundStream(c.ID), "$"},
+				// 	Count:   1,
+				// 	Block:   0,
+				// }).Result()
+				// if err != nil {
+				// 	fmt.Printf("failed to read from match found stream - %v\n", err)
+				// 	continue
+				// }
+				// if len(entries) == 0 || len(entries[0].Messages) == 0 {
+				// 	fmt.Printf("read from match found stream zero results")
+				// 	continue
+				// }
+				// data := entries[0].Messages[0].Values
+
+				// res := matchmake.NewMatchmakingResponse()
+				// err = interfacestruct.Structify(data, &res)
 				if err != nil {
-					fmt.Printf("failed to scan {%v} into new MatchResponse - %v\n", data, err)
+					fmt.Printf("failed to receive new MatchResponse - %v\n", err)
 				}
 				c.MatchmakingMsgCh <- res
 				return
@@ -245,24 +248,26 @@ func (c *Client) listenToRedis(ctx context.Context, connCancelFunc context.Cance
 				return
 			default:
 				//TODO: ReadFromBlocking
-				entries, err := c.rdb.XRead(ctx, &goredis.XReadArgs{
-					Streams: []string{redis.GameServerResponseStream(c.ID), "$"},
-					Count:   1,
-					Block:   0,
-				}).Result()
-				if err != nil {
-					fmt.Printf("failed to read from game server response stream - %v\n", err)
-				}
-				data := entries[0].Messages[0].Values
-				if len(entries) == 0 || len(entries[0].Messages) == 0 {
-					fmt.Printf("read from game server response stream with zero results")
-					continue
-				}
-
 				var res game.ServerResponse
-				err = interfacestruct.Structify(data, &res)
+				err := c.m.Consume(ctx, redis.GameServerResponseStream(c.ID), &res)
+				// entries, err := c.rdb.XRead(ctx, &goredis.XReadArgs{
+				// 	Streams: []string{redis.GameServerResponseStream(c.ID), "$"},
+				// 	Count:   1,
+				// 	Block:   0,
+				// }).Result()
+				// if err != nil {
+				// 	fmt.Printf("failed to read from game server response stream - %v\n", err)
+				// }
+				// data := entries[0].Messages[0].Values
+				// if len(entries) == 0 || len(entries[0].Messages) == 0 {
+				// 	fmt.Printf("read from game server response stream with zero results")
+				// 	continue
+				// }
+
+				// var res game.ServerResponse
+				// err = interfacestruct.Structify(data, &res)
 				if err != nil {
-					fmt.Printf("failed to scan {%v} into new MatchResponse - %v\n", data, err)
+					fmt.Printf("failed to receive new GameResponse - %v\n", err)
 				}
 				c.GameMsgCh <- res
 			}

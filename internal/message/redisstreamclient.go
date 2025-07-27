@@ -3,21 +3,21 @@ package message
 import (
 	"context"
 
-	"github.com/bkohler93/game-backend/internal/redis"
+	"github.com/redis/go-redis/v9"
 )
 
 type RedisStreamClient struct {
-	rdb *redis.RedisClient
+	rdb *redis.Client
 }
 
-func NewRedisStreamClient(redisClient *redis.RedisClient) *RedisStreamClient {
+func NewRedisStreamClient(redisClient *redis.Client) *RedisStreamClient {
 	return &RedisStreamClient{
 		rdb: redisClient,
 	}
 }
 
-func (r *RedisStreamClient) Publish(ctx context.Context, channel string, msg []byte) error {
-
+func (r *RedisStreamClient) Publish(ctx context.Context, channel string, msg any) error {
+	return nil
 }
 
 func (r *RedisStreamClient) Consume(ctx context.Context, channel string, output any) error {
@@ -33,5 +33,6 @@ func (r *RedisStreamClient) Consume(ctx context.Context, channel string, output 
 	// res := entries[0].Messages[0].Values
 	// var req MatchRequest
 	// err = interfacestruct.Structify(res, &req)
-	r.rdb.XReadGroup()
+	// r.rdb.XReadGroup()
+	return nil
 }

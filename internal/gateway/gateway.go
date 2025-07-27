@@ -10,8 +10,7 @@ import (
 	"github.com/bkohler93/game-backend/internal/matchmake"
 	"github.com/bkohler93/game-backend/internal/message"
 	"github.com/bkohler93/game-backend/internal/redis"
-	"github.com/bkohler93/game-backend/pkg/interfacestruct"
-	"github.com/fatihkahveci/simple-matchmaking/store"
+	"github.com/bkohler93/game-backend/internal/store"
 )
 
 const (
@@ -27,10 +26,12 @@ type Gateway struct {
 	hub  *Hub
 }
 
-func NewGateway(addr, redisClient *redis.RedisClient) Gateway {
+func NewGateway(addr string, mb message.MessageBus, s store.Store) Gateway {
 	return Gateway{
-		rdb: redisClient,
-		hub: NewHub(),
+		mb:   mb,
+		s:    s,
+		addr: addr,
+		hub:  NewHub(),
 	}
 }
 
@@ -38,7 +39,7 @@ func (g *Gateway) Start(ctx context.Context) {
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cf := context.WithCancel(ctx)
 
-		client, err := NewClient(w, r, g.rdb)
+		client, err := NewClient(w, r, g.mb)
 		if err != nil {
 			fmt.Printf("failed to initialize client websocket - %v\n", err)
 			cf()
@@ -74,24 +75,36 @@ func (g *Gateway) listenForMatches(ctx context.Context) {
 		fmt.Println("waiting for match to come through stream")
 
 		//TODO: ReadFromStreamBlocking()
-		entries, err := g.rdb.XRead(ctx, &goredis.XReadArgs{
-			Streams: []string{redis.MatchfoundStream, "$"},
-			Count:   1,
-			Block:   0,
-		}).Result()
-		if err != nil {
-			fmt.Printf("failed to read from matchmake:found stream - %v\n", err)
-			continue
-		}
-		res := entries[0].Messages[0].Values
-
 		var match matchmake.MatchResponse
-		err = interfacestruct.Structify(res, &match)
+		err := g.mb.Consume(ctx, redis.MatchfoundStream, &match)
 		if err != nil {
-			fmt.Printf("failed to scan {%v} into new MatchResponse - %v\n", res, err)
+			fmt.Printf("failed to consume from matchfound stream - %v\n", err)
 			continue
 		}
-		g.hub.Clients[match.UserOneId].MatchmakingMsgCh <- match
-		g.hub.Clients[match.UserTwoId].MatchmakingMsgCh <- match
+
+		// entries, err := g.rdb.XRead(ctx, &goredis.XReadArgs{
+		// 	Streams: []string{redis.MatchfoundStream, "$"},
+		// 	Count:   1,
+		// 	Block:   0,
+		// }).Result()
+		// if err != nil {
+		// 	fmt.Printf("failed to read from matchmake:found stream - %v\n", err)
+		// 	continue
+		// }
+		// res := entries[0].Messages[0].Values
+
+		// var match matchmake.MatchResponse
+		// err = interfacestruct.Structify(res, &match)
+		// if err != nil {
+		// 	fmt.Printf("failed to scan {%v} into new MatchResponse - %v\n", res, err)
+		// 	continue
+		// }
+		if _, ok := g.hub.Clients[match.UserOneId]; ok {
+			g.hub.Clients[match.UserOneId].MatchmakingMsgCh <- match
+		}
+
+		if _, ok := g.hub.Clients[match.UserTwoId]; ok {
+			g.hub.Clients[match.UserTwoId].MatchmakingMsgCh <- match
+		}
 	}
 }
