@@ -186,15 +186,15 @@ func (c *Client) ForwardMessageToService(msg BaseMessage, ctx context.Context, c
 		matchReq.UserId = c.ID
 
 		//TODO: SendMessage
-		err = c.m.Publish(ctx, redis.MatchmakeRequestStream, matchReq)
-		if err != nil {
-			fmt.Printf("error forwarding matchmake request %v\n", err)
-		}
+		c.m.Publish(ctx, redis.MatchmakeRequestStream, matchReq)
 		// _, err = c.rdb.XAdd(ctx, &goredis.XAddArgs{
 		// 	Stream: redis.MatchmakeRequestStream,
 		// 	Values: matchReq,
 		// 	ID:     "*",
 		// }).Result()
+		if err != nil {
+			fmt.Printf("error forwarding matchmake request %v\n", err)
+		}
 	default:
 		fmt.Println("unexpected gateway.MessageType", msg.Type)
 		connCancelFunc()
@@ -230,9 +230,9 @@ func (c *Client) listenToRedis(ctx context.Context, connCancelFunc context.Cance
 				// data := entries[0].Messages[0].Values
 
 				// res := matchmake.NewMatchmakingResponse()
-				// err = interfacestruct.Structify(data, &res)
+				// err := interfacestruct.Structify(data, &res)
 				if err != nil {
-					fmt.Printf("failed to receive new MatchResponse - %v\n", err)
+					fmt.Printf("failed to get new MatchResponse - %v\n", err)
 				}
 				c.MatchmakingMsgCh <- res
 				return
@@ -248,7 +248,7 @@ func (c *Client) listenToRedis(ctx context.Context, connCancelFunc context.Cance
 				return
 			default:
 				//TODO: ReadFromBlocking
-				var res game.ServerResponse
+				res := game.ServerResponse{}
 				err := c.m.Consume(ctx, redis.GameServerResponseStream(c.ID), &res)
 				// entries, err := c.rdb.XRead(ctx, &goredis.XReadArgs{
 				// 	Streams: []string{redis.GameServerResponseStream(c.ID), "$"},
@@ -267,7 +267,7 @@ func (c *Client) listenToRedis(ctx context.Context, connCancelFunc context.Cance
 				// var res game.ServerResponse
 				// err = interfacestruct.Structify(data, &res)
 				if err != nil {
-					fmt.Printf("failed to receive new GameResponse - %v\n", err)
+					fmt.Printf("failed to new MatchResponse - %v\n", err)
 				}
 				c.GameMsgCh <- res
 			}

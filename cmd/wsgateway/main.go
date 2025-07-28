@@ -22,6 +22,7 @@ func main() {
 		Addr:     redisAddr,
 		DB:       0, // use default DB
 		Password: "",
+		Protocol: 2,
 	})
 
 	mb := message.NewRedisStreamClient(redisClient)

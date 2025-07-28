@@ -51,7 +51,7 @@ func (m *Matchmaker) Start(ctx context.Context) {
 		// var req MatchRequest
 		// err = interfacestruct.Structify(res, &req)
 		if err != nil {
-			fmt.Printf("failed to scan {%v} into new MatchResponse - %v\n", res, err)
+			fmt.Printf("failed to retrieve new MatchResponse - %v\n", err)
 			continue
 		}
 		req.TimeReceived = time.Now()
@@ -69,40 +69,41 @@ func (m *Matchmaker) Start(ctx context.Context) {
 }
 
 func (m *Matchmaker) scanForMatches(ctx context.Context) {
-	var cursor uint64
+	// var cursor uint64
 
-	keys := []string{}
+	// keys := []string{}
 	for {
 		//TODO use identifier (skill, region, etc) to reduce the amount of requests retrieved
 
 		//TODO: RetrieveAllKeys
-		res, cursor, err := m.rdb.Scan(ctx, cursor, redis.AllMatchmakePool, 100).Result() // if num keys greater than count this loops infinitely..?
-		if err != nil {
-			fmt.Printf("failed to retrieve keys - %v\n", err)
-			return
-		}
-		keys = append(keys, res...)
-		if cursor == 0 {
-			break
-		}
+		// m.s.GetAllValuesWithKeys(redis.AllMatchmakePool)
+		// res, cursor, err := m.rdb.Scan(ctx, cursor, redis.AllMatchmakePool, 100).Result() // if num keys greater than count this loops infinitely..?
+		// if err != nil {
+		// 	fmt.Printf("failed to retrieve keys - %v\n", err)
+		// 	return
+		// }
+		// keys = append(keys, res...)
+		// if cursor == 0 {
+		// 	break
+		// }
 	}
 
 	requests := []MatchRequest{}
-	for _, key := range keys {
+	// for _, key := range keys {
 
-		//TODO: GetValuesUsingKeys
-		cmdReturn := m.rdb.HGetAll(ctx, key)
-		var req MatchRequest
+	// 	//TODO: GetValuesUsingKeys
+	// 	cmdReturn := m.rdb.HGetAll(ctx, key)
+	// 	var req MatchRequest
 
-		if err := cmdReturn.Scan(&req); err != nil {
-			fmt.Printf("failed to scan hash at key{%s} into a MatchRequest - %v\n", key, err)
-			continue
-		}
-		if req.MatchedWith.UUID() == uuid.Nil && req.UserId.UUID() != uuid.Nil {
-			requests = append(requests, req)
-		}
-	}
-	requests = m.s.GetAllValuesWithKeys[MatchRequest](redis.AllMatchmakePool)
+	// 	if err := cmdReturn.Scan(&req); err != nil {
+	// 		fmt.Printf("failed to scan hash at key{%s} into a MatchRequest - %v\n", key, err)
+	// 		continue
+	// 	}
+	// 	if req.MatchedWith.UUID() == uuid.Nil && req.UserId.UUID() != uuid.Nil {
+	// 		requests = append(requests, req)
+	// 	}
+	// }
+	// requests = m.s.GetAllValuesWithKeys[MatchRequest](redis.AllMatchmakePool)
 	slices.SortStableFunc(requests, func(a, b MatchRequest) int {
 		return a.TimeReceived.Compare(b.TimeReceived)
 	})
@@ -129,35 +130,37 @@ func (m *Matchmaker) makeMatches(requests []MatchRequest, ctx context.Context) {
 				fmt.Printf("new match! - %v\n", matchResponse)
 
 				//TODO: Set
-				_, err := m.rdb.HSet(ctx, redis.MatchmakePoolUser(requests[i].UserId), requests[i]).Result()
-				if err != nil {
-					fmt.Printf("failed to set match request - %v\n", err)
-					return
-				}
+				// _, err := m.rdb.HSet(ctx, redis.MatchmakePoolUser(requests[i].UserId), requests[i]).Result()
+				// if err != nil {
+				// 	fmt.Printf("failed to set match request - %v\n", err)
+				// 	return
+				// }
 
 				//TODO: Set
-				_, err = m.rdb.HSet(ctx, redis.MatchmakePoolUser(requests[j].UserId), requests[j]).Result()
-				if err != nil {
-					fmt.Printf("failed to set match request - %v\n", err)
-					return
-				}
+				// _, err = m.rdb.HSet(ctx, redis.MatchmakePoolUser(requests[j].UserId), requests[j]).Result()
+				// if err != nil {
+				// 	fmt.Printf("failed to set match request - %v\n", err)
+				// 	return
+				// }
 
 				//TODO: SendMessage
-				_, err = m.rdb.XAdd(ctx, &goredis.XAddArgs{
-					Stream: redis.MatchFoundStream(matchResponse.UserOneId),
-					Values: matchResponse, //TODO add specifier to tell matchmaker what keys to pull
-					ID:     "*",
-				}).Result()
+				err := m.mb.Publish(ctx, redis.MatchFoundStream(matchResponse.UserOneId), matchResponse)
+				// _, err = m.rdb.XAdd(ctx, &goredis.XAddArgs{
+				// 	Stream: redis.MatchFoundStream(matchResponse.UserOneId),
+				// 	Values: matchResponse, //TODO add specifier to tell matchmaker what keys to pull
+				// 	ID:     "*",
+				// }).Result()
 				if err != nil {
 					fmt.Printf("error signaling to start matchmaking - %v\n", err)
 				}
 
 				//TODO: SendMessage
-				_, err = m.rdb.XAdd(ctx, &goredis.XAddArgs{
-					Stream: redis.MatchFoundStream(matchResponse.UserTwoId),
-					Values: matchResponse, //TODO add specifier to tell matchmaker what keys to pull
-					ID:     "*",
-				}).Result()
+				err = m.mb.Publish(ctx, redis.MatchFoundStream(matchResponse.UserTwoId), matchResponse)
+				// _, err = m.rdb.XAdd(ctx, &goredis.XAddArgs{
+				// 	Stream: redis.MatchFoundStream(matchResponse.UserTwoId),
+				// 	Values: matchResponse, //TODO add specifier to tell matchmaker what keys to pull
+				// 	ID:     "*",
+				// }).Result()
 				if err != nil {
 					fmt.Printf("error signaling to start matchmaking - %v\n", err)
 				}
