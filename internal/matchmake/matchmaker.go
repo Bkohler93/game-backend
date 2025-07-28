@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/message"
-	"github.com/bkohler93/game-backend/internal/redis"
 	"github.com/bkohler93/game-backend/internal/store"
+	"github.com/bkohler93/game-backend/internal/utils/redisutils"
 	"github.com/google/uuid"
 )
 
@@ -37,7 +37,7 @@ func (m *Matchmaker) Start(ctx context.Context) {
 
 		//TODO: ReadFrom
 		var req MatchRequest
-		err := m.mb.Consume(ctx, redis.MatchmakeRequestStream, &req)
+		err := m.mb.Consume(ctx, redisutils.MatchmakeRequestStream, &req)
 		// entries, err := m.rdb.XRead(ctx, &goredis.XReadArgs{
 		// 	Streams: []string{"matchmake:request", "$"},
 		// 	Count:   1,
@@ -58,7 +58,7 @@ func (m *Matchmaker) Start(ctx context.Context) {
 
 		//TODO: Set
 		// _, err = m.rdb.HSet(ctx, redis.MatchmakePoolUser(req.UserId), req).Result()
-		err = m.s.StoreKeyValue(redis.MatchmakePoolUser(req.UserId), req)
+		err = m.s.StoreKeyValue(ctx, redisutils.MatchmakePoolUser(req.UserId), req)
 		if err != nil {
 			fmt.Printf("failed to request match - %v\n", err)
 			return
@@ -144,7 +144,7 @@ func (m *Matchmaker) makeMatches(requests []MatchRequest, ctx context.Context) {
 				// }
 
 				//TODO: SendMessage
-				err := m.mb.Publish(ctx, redis.MatchFoundStream(matchResponse.UserOneId), matchResponse)
+				err := m.mb.Publish(ctx, redisutils.MatchFoundStream(matchResponse.UserOneId), matchResponse)
 				// _, err = m.rdb.XAdd(ctx, &goredis.XAddArgs{
 				// 	Stream: redis.MatchFoundStream(matchResponse.UserOneId),
 				// 	Values: matchResponse, //TODO add specifier to tell matchmaker what keys to pull
@@ -155,7 +155,7 @@ func (m *Matchmaker) makeMatches(requests []MatchRequest, ctx context.Context) {
 				}
 
 				//TODO: SendMessage
-				err = m.mb.Publish(ctx, redis.MatchFoundStream(matchResponse.UserTwoId), matchResponse)
+				err = m.mb.Publish(ctx, redisutils.MatchFoundStream(matchResponse.UserTwoId), matchResponse)
 				// _, err = m.rdb.XAdd(ctx, &goredis.XAddArgs{
 				// 	Stream: redis.MatchFoundStream(matchResponse.UserTwoId),
 				// 	Values: matchResponse, //TODO add specifier to tell matchmaker what keys to pull

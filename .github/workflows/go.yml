@@ -13,6 +13,15 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+
+    services:
+      # Label used to access the service container
+      redis:
+        # Docker Hub image
+        image: redis/redis-stack:latest
+        ports:
+          - 6379:6379
+
     steps:
     - uses: actions/checkout@v4
 

@@ -9,8 +9,8 @@ import (
 
 	"github.com/bkohler93/game-backend/internal/matchmake"
 	"github.com/bkohler93/game-backend/internal/message"
-	"github.com/bkohler93/game-backend/internal/redis"
 	"github.com/bkohler93/game-backend/internal/store"
+	"github.com/bkohler93/game-backend/internal/utils/redisutils"
 )
 
 const (
@@ -76,7 +76,7 @@ func (g *Gateway) listenForMatches(ctx context.Context) {
 
 		//TODO: ReadFromStreamBlocking()
 		var match matchmake.MatchResponse
-		err := g.mb.Consume(ctx, redis.MatchfoundStream, &match)
+		err := g.mb.Consume(ctx, redisutils.MatchfoundStream, &match)
 		if err != nil {
 			fmt.Printf("failed to consume from matchfound stream - %v\n", err)
 			continue

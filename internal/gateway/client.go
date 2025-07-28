@@ -10,7 +10,7 @@ import (
 	"github.com/bkohler93/game-backend/internal/game"
 	"github.com/bkohler93/game-backend/internal/matchmake"
 	"github.com/bkohler93/game-backend/internal/message"
-	"github.com/bkohler93/game-backend/internal/redis"
+	"github.com/bkohler93/game-backend/internal/utils/redisutils"
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
 	"github.com/gorilla/websocket"
 )
@@ -165,7 +165,7 @@ func (c *Client) ForwardMessageToService(msg BaseMessage, ctx context.Context, c
 
 		json.Unmarshal(msg.Payload, &action)
 		//TODO: SendMessage
-		err := c.m.Publish(ctx, redis.GameClientActionStream(action.GameID), action)
+		err := c.m.Publish(ctx, redisutils.GameClientActionStream(action.GameID), action)
 		if err != nil {
 			fmt.Printf("error forwarding gameplay message %v\n", err)
 		}
@@ -186,7 +186,7 @@ func (c *Client) ForwardMessageToService(msg BaseMessage, ctx context.Context, c
 		matchReq.UserId = c.ID
 
 		//TODO: SendMessage
-		c.m.Publish(ctx, redis.MatchmakeRequestStream, matchReq)
+		c.m.Publish(ctx, redisutils.MatchmakeRequestStream, matchReq)
 		// _, err = c.rdb.XAdd(ctx, &goredis.XAddArgs{
 		// 	Stream: redis.MatchmakeRequestStream,
 		// 	Values: matchReq,
@@ -213,7 +213,7 @@ func (c *Client) listenToRedis(ctx context.Context, connCancelFunc context.Cance
 
 				//TODO: ReadFromBlocking
 				res := matchmake.NewMatchmakingResponse()
-				err := c.m.Consume(ctx, redis.MatchFoundStream(c.ID), &res)
+				err := c.m.Consume(ctx, redisutils.MatchFoundStream(c.ID), &res)
 				// entries, err := c.rdb.XRead(ctx, &goredis.XReadArgs{
 				// 	Streams: []string{redis.MatchFoundStream(c.ID), "$"},
 				// 	Count:   1,
@@ -249,7 +249,7 @@ func (c *Client) listenToRedis(ctx context.Context, connCancelFunc context.Cance
 			default:
 				//TODO: ReadFromBlocking
 				res := game.ServerResponse{}
-				err := c.m.Consume(ctx, redis.GameServerResponseStream(c.ID), &res)
+				err := c.m.Consume(ctx, redisutils.GameServerResponseStream(c.ID), &res)
 				// entries, err := c.rdb.XRead(ctx, &goredis.XReadArgs{
 				// 	Streams: []string{redis.GameServerResponseStream(c.ID), "$"},
 				// 	Count:   1,

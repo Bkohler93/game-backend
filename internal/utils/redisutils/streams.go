@@ -1,8 +1,6 @@
-package redis
+package redisutils
 
-import (
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
-)
+import "github.com/bkohler93/game-backend/pkg/stringuuid"
 
 const (
 	MatchmakeStream        = "matchmake"
