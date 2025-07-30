@@ -21,6 +21,6 @@ func (id StringUUID) String() string {
 	return string(id)
 }
 
-func (u StringUUID) MarshalBinary() (data []byte, err error) {
-	return []byte(u.String()), nil
+func (id StringUUID) MarshalBinary() (data []byte, err error) {
+	return []byte(id), nil
 }

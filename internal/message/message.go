@@ -1,6 +1,8 @@
 package message
 
-import "context"
+import (
+	"context"
+)
 
 type MessageBus interface {
 	Producer

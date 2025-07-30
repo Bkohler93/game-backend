@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/bkohler93/game-backend/internal/message"
 	"github.com/google/uuid"
 )
 
 func TestJsonMarshallingRequest(t *testing.T) {
 	jsonBytes := []byte("{\"name\": \"JohnnyRocket\"}")
-	var req MatchRequest
+	var req message.MatchmakingRequest
 	err := json.Unmarshal(jsonBytes, &req)
 	if err != nil {
 		t.Errorf("error unmarshalling match request - %v", err)

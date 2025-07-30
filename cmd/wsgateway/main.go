@@ -6,7 +6,7 @@ import (
 
 	"github.com/bkohler93/game-backend/internal/gateway"
 	"github.com/bkohler93/game-backend/internal/message"
-	"github.com/bkohler93/game-backend/internal/store"
+	"github.com/bkohler93/game-backend/internal/room"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 )
@@ -26,9 +26,9 @@ func main() {
 	})
 
 	mb := message.NewRedisStreamClient(redisClient)
-	s := store.NewRediStore(redisClient)
+	roomRepository := room.NewRepository(room.NewRedisRoomDAO(redisClient))
 
-	g := gateway.NewGateway(port, mb, s)
+	g := gateway.NewGateway(port, mb, roomRepository)
 
 	g.Start(ctx)
 }

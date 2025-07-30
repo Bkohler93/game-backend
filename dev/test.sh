@@ -29,7 +29,11 @@ echo "--- Starting Redis container: $CONTAINER_NAME ---"
 # Run Redis container in detached mode (-d)
 # We don't need a separate run_redis.sh if it's just docker run.
 # If run_redis.sh does more, then adapt this.
-docker run -d --name "$CONTAINER_NAME" -p "$REDIS_PORT:$REDIS_PORT" redis/redis-stack:latest
+docker run -d \
+  --name "$CONTAINER_NAME" \
+  -p "$REDIS_PORT:$REDIS_PORT" \
+  redis/redis-stack:latest \
+
 
 echo "Waiting for Redis to be ready (up to 10 seconds)..."
 # Use a loop to check if Redis is ready inside the container

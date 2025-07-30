@@ -17,7 +17,7 @@ import (
 
 type Client struct {
 	conn             *websocket.Conn
-	MatchmakingMsgCh chan (matchmake.MatchResponse)
+	MatchmakingMsgCh chan message.BaseMatchmakingClientMessage
 	GameMsgCh        chan (game.ServerResponse)
 	ID               stringuuid.StringUUID
 	m                message.MessageBus
@@ -47,7 +47,7 @@ func NewClient(w http.ResponseWriter, r *http.Request, m message.MessageBus) (*C
 
 	c = &Client{
 		conn:             conn,
-		MatchmakingMsgCh: make(chan matchmake.MatchResponse),
+		MatchmakingMsgCh: make(chan message.BaseMatchmakingClientMessage),
 		GameMsgCh:        make(chan game.ServerResponse),
 		ID:               id,
 		m:                m,
@@ -83,7 +83,6 @@ func (c *Client) writePump(ctx context.Context, connCancelFunc context.CancelFun
 		case <-ctx.Done():
 			return
 		case msg := <-c.MatchmakingMsgCh:
-			message.Type = MessageTypeMatchmaking
 			bytes, err = json.Marshal(msg)
 			if err != nil {
 				fmt.Printf("failed to marshal outgoing matchmaking msg - %v\n", err)
@@ -163,38 +162,67 @@ func (c *Client) ForwardMessageToService(msg BaseMessage, ctx context.Context, c
 	case MessageTypeGameplay:
 		var action game.ClientActionBase
 
-		json.Unmarshal(msg.Payload, &action)
-		//TODO: SendMessage
-		err := c.m.Publish(ctx, redisutils.GameClientActionStream(action.GameID), action)
+		err := json.Unmarshal(msg.Payload, &action)
+		if err != nil {
+			fmt.Printf("error unmarsheling gameplay message %v\n", err)
+			connCancelFunc()
+		}
+		err = c.m.Publish(ctx, redisutils.GameServerMessageStream(action.GameID), action)
 		if err != nil {
 			fmt.Printf("error forwarding gameplay message %v\n", err)
+			connCancelFunc()
 		}
 		// _, err := c.rdb.XAdd(ctx, &goredis.XAddArgs{
-		// 	Stream: redis.GameClientActionStream(action.GameID),
+		// 	Stream: redis.GameServerMessageStream(action.GameID),
 		// 	Values: action,
 		// 	ID:     "*",
 		// }).Result()
 	case MessageTypeMatchmaking:
-		var matchReq matchmake.MatchRequest
-		err := json.Unmarshal(msg.Payload, &matchReq)
+
+		//TODO switch on the type of message here, look at matchmake/message.go, will be BaseClientMessage
+		var clientMsg message.BaseClientMessage
+		err := json.Unmarshal(msg.Payload, &clientMsg)
 		if err != nil {
 			fmt.Printf("failed to unmarshal msg payload - %v", err)
 			connCancelFunc()
 			return
 		}
-		fmt.Printf("received match request - %v\n", matchReq)
-		matchReq.UserId = c.ID
+		switch clientMsg.Type {
+		case matchmake.ClientMessageTypeMatchmakingRequest:
+			{
+				var matchReq message.MatchmakingRequest
+				err = json.Unmarshal(clientMsg.Payload, &matchReq)
+				if err != nil {
+					fmt.Printf("failed to unmarshal BaseClientMessage payload into MatchmakingRequest - %v", err)
+					connCancelFunc()
+					return
+				}
+				fmt.Printf("received match request - %v\n", matchReq)
+				matchReq.UserId = c.ID //TODO the userID should come from the Godot App/Client itself
 
-		//TODO: SendMessage
-		c.m.Publish(ctx, redisutils.MatchmakeRequestStream, matchReq)
-		// _, err = c.rdb.XAdd(ctx, &goredis.XAddArgs{
-		// 	Stream: redis.MatchmakeRequestStream,
-		// 	Values: matchReq,
-		// 	ID:     "*",
-		// }).Result()
-		if err != nil {
-			fmt.Printf("error forwarding matchmake request %v\n", err)
+				//TODO: SendMessage to "matchmake:server_message"
+				err = c.m.Publish(ctx, redisutils.MatchmakeRequestStream, matchReq)
+				// _, err = c.rdb.XAdd(ctx, &goredis.XAddArgs{
+				// 	Stream: redis.MatchmakeRequestStream,
+				// 	Values: matchReq,
+				// 	ID:     "*",
+				// }).Result()
+				if err != nil {
+					fmt.Printf("error forwarding matchmake request %v\n", err)
+					connCancelFunc()
+				}
+			}
+		case matchmake.ClientMessageTypeMatchmakingExit:
+			var exitRequest message.ExitMatchmaking
+			err = json.Unmarshal(clientMsg.Payload, &exitRequest)
+			if err != nil {
+				fmt.Printf("failed to unmarshal BaseClientMessage payload into ExitMatchmakingRequest - %v", err)
+				connCancelFunc()
+			}
+
+			//TODO Publish to "matchmake:server_message"
 		}
+
 	default:
 		fmt.Println("unexpected gateway.MessageType", msg.Type)
 		connCancelFunc()
@@ -202,18 +230,15 @@ func (c *Client) ForwardMessageToService(msg BaseMessage, ctx context.Context, c
 }
 
 func (c *Client) listenToRedis(ctx context.Context, connCancelFunc context.CancelFunc) {
-	// read from matchmake response stream
+	// read from matchmake client message stream
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				fmt.Printf("waiting to receive match for id=%s\n", c.ID)
-
-				//TODO: ReadFromBlocking
-				res := matchmake.NewMatchmakingResponse()
-				err := c.m.Consume(ctx, redisutils.MatchFoundStream(c.ID), &res)
+				msg := message.BaseMatchmakingClientMessage{}
+				err := c.m.Consume(ctx, redisutils.MatchmakingClientMessageStream(c.ID), &msg)
 				// entries, err := c.rdb.XRead(ctx, &goredis.XReadArgs{
 				// 	Streams: []string{redis.MatchFoundStream(c.ID), "$"},
 				// 	Count:   1,
@@ -229,12 +254,12 @@ func (c *Client) listenToRedis(ctx context.Context, connCancelFunc context.Cance
 				// }
 				// data := entries[0].Messages[0].Values
 
-				// res := matchmake.NewMatchmakingResponse()
+				// res := matchmake.EmptyMatchMadeMessage()
 				// err := interfacestruct.Structify(data, &res)
 				if err != nil {
 					fmt.Printf("failed to get new MatchResponse - %v\n", err)
 				}
-				c.MatchmakingMsgCh <- res
+				c.MatchmakingMsgCh <- msg
 				return
 			}
 		}

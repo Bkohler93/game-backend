@@ -2,42 +2,45 @@ package matchmake
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/message"
-	"github.com/bkohler93/game-backend/internal/store"
+	"github.com/bkohler93/game-backend/internal/room"
 	"github.com/bkohler93/game-backend/internal/utils/redisutils"
 	"github.com/google/uuid"
 )
 
 type Matchmaker struct {
-	mb   message.MessageBus
-	s    store.Store
-	mu   *sync.Mutex
-	pool map[string]*MatchRequest
+	mb             message.MessageBus
+	roomRepository *room.Repository
 }
 
-func NewMatchmaker(mb message.MessageBus, s store.Store) *Matchmaker {
+func NewMatchmaker(mb message.MessageBus, rr *room.Repository) *Matchmaker {
 
-	return &Matchmaker{mb: mb, s: s, mu: &sync.Mutex{}, pool: make(map[string]*MatchRequest)}
-}
-
-func (m *Matchmaker) AddRequest(id string, req *MatchRequest) {
-	defer m.mu.Unlock()
-	m.mu.Lock()
-	m.pool[id] = req
+	return &Matchmaker{mb: mb, roomRepository: rr}
 }
 
 func (m *Matchmaker) Start(ctx context.Context) {
 	for {
-		fmt.Println("Listening for new matchmaking requests")
+		fmt.Println("Listening for new Matchmaking messages.")
 
-		//TODO: ReadFrom
-		var req MatchRequest
-		err := m.mb.Consume(ctx, redisutils.MatchmakeRequestStream, &req)
+		var msg message.BaseMatchmakingServerMessage
+		err := m.mb.Consume(ctx, redisutils.MatchmakingServerMessageStream(), &msg)
+		switch msg.Type {
+		case message.ServerMessageTypeMatchmakingRequest:
+			var req message.MatchmakingRequest
+			err := json.Unmarshal(msg.Payload, &req)
+			if err != nil {
+				fmt.Printf("Error unmarshalling matchmaking request: %v\n", err)
+				continue
+			}
+			go m.processMatchmakingRequest(req)
+			break
+		case message.ServerMessageTypeMatchmakingExit:
+		}
 		// entries, err := m.rdb.XRead(ctx, &goredis.XReadArgs{
 		// 	Streams: []string{"matchmake:request", "$"},
 		// 	Count:   1,
@@ -88,7 +91,7 @@ func (m *Matchmaker) scanForMatches(ctx context.Context) {
 		// }
 	}
 
-	requests := []MatchRequest{}
+	requests := []message.MatchmakingRequest{}
 	// for _, key := range keys {
 
 	// 	//TODO: GetValuesUsingKeys
@@ -104,13 +107,13 @@ func (m *Matchmaker) scanForMatches(ctx context.Context) {
 	// 	}
 	// }
 	// requests = m.s.GetAllValuesWithKeys[MatchRequest](redis.AllMatchmakePool)
-	slices.SortStableFunc(requests, func(a, b MatchRequest) int {
-		return a.TimeReceived.Compare(b.TimeReceived)
+	slices.SortStableFunc(requests, func(a, b message.MatchmakingRequest) int {
+		return a.TimeCreated.Compare(b.TimeCreated)
 	})
 	m.makeMatches(requests, ctx)
 }
 
-func (m *Matchmaker) makeMatches(requests []MatchRequest, ctx context.Context) {
+func (m *Matchmaker) makeMatches(requests []message.MatchmakingRequest, ctx context.Context) {
 	for i := 0; i < len(requests); i++ {
 		for j := i + 1; j < len(requests); j++ {
 			if requests[i].MatchedWith.UUID() != uuid.Nil || requests[j].MatchedWith.UUID() != uuid.Nil {
@@ -170,7 +173,26 @@ func (m *Matchmaker) makeMatches(requests []MatchRequest, ctx context.Context) {
 	}
 }
 
-func canMatch(u1 MatchRequest, u2 MatchRequest) bool {
+func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req message.MatchmakingRequest) {
+	openRooms, err := m.roomRepository.QueryOpenRooms(ctx, req)
+	if err != nil {
+		fmt.Printf("failed to retrieve open rooms - %v\n", err)
+		//TODO create error channel or something in order to send an error back to the client
+		return
+	}
+	for _, openRoom := range openRooms {
+		room, err := m.roomRepository.TryJoinRoom(req, openRoom)
+		if err != nil  && err.String() != "room full" {
+			fmt.Printf("failed to attempt to join the open room - %v\n", err)
+			continue
+		} 
+		if room == nil {
+			fmt.Printf("unable to join room - %v", err.String())
+		}	
+	}
+}
+
+func canMatch(u1 message.MatchmakingRequest, u2 message.MatchmakingRequest) bool {
 	//TODO make the match rule more... something
 	return u1.UserId != u2.UserId
 }

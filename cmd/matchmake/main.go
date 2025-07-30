@@ -6,7 +6,7 @@ import (
 
 	"github.com/bkohler93/game-backend/internal/matchmake"
 	"github.com/bkohler93/game-backend/internal/message"
-	"github.com/bkohler93/game-backend/internal/store"
+	"github.com/bkohler93/game-backend/internal/room"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 )
@@ -25,9 +25,9 @@ func main() {
 	})
 
 	mb := message.NewRedisStreamClient(redisClient)
-	s := store.NewRediStore(redisClient)
+	roomRepository := room.NewRepository(room.NewRedisRoomDAO(redisClient))
 
-	m := matchmake.NewMatchmaker(mb, s)
+	m := matchmake.NewMatchmaker(mb, roomRepository)
 	m.Start(ctx)
 }
 

@@ -7,31 +7,29 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bkohler93/game-backend/internal/matchmake"
 	"github.com/bkohler93/game-backend/internal/message"
-	"github.com/bkohler93/game-backend/internal/store"
-	"github.com/bkohler93/game-backend/internal/utils/redisutils"
+	"github.com/bkohler93/game-backend/internal/room"
+	"github.com/gorilla/websocket"
 )
 
 const (
-	pongWait = 60 * time.Second
-
+	pongWait       = 60 * time.Second
 	maxMessageSize = 512
 )
 
 type Gateway struct {
-	mb   message.MessageBus
-	s    store.Store
-	addr string
-	hub  *Hub
+	mb             message.MessageBus
+	roomRepository *room.Repository
+	addr           string
+	hub            *Hub
 }
 
-func NewGateway(addr string, mb message.MessageBus, s store.Store) Gateway {
+func NewGateway(addr string, mb message.MessageBus, rr *room.Repository) Gateway {
 	return Gateway{
-		mb:   mb,
-		s:    s,
-		addr: addr,
-		hub:  NewHub(),
+		mb:             mb,
+		roomRepository: rr,
+		addr:           addr,
+		hub:            NewHub(),
 	}
 }
 
@@ -45,7 +43,12 @@ func (g *Gateway) Start(ctx context.Context) {
 			cf()
 			return
 		}
-		defer client.conn.Close()
+		defer func(conn *websocket.Conn) {
+			err := conn.Close()
+			if err != nil {
+				fmt.Printf("failed to close connection - %v\n", err)
+			}
+		}(client.conn)
 
 		g.hub.RegisterCh <- client
 
@@ -61,50 +64,9 @@ func (g *Gateway) Start(ctx context.Context) {
 		g.hub.UnregisterCh <- client
 	})
 
-	go g.listenForMatches(ctx)
-
 	fmt.Printf("listening on %s for new matchmaking requests from clients\n", g.addr)
 	err := http.ListenAndServe("0.0.0.0:"+g.addr, nil)
 	if err != nil {
 		log.Fatalf("error creating server - %v", err)
-	}
-}
-
-func (g *Gateway) listenForMatches(ctx context.Context) {
-	for {
-		fmt.Println("waiting for match to come through stream")
-
-		//TODO: ReadFromStreamBlocking()
-		var match matchmake.MatchResponse
-		err := g.mb.Consume(ctx, redisutils.MatchfoundStream, &match)
-		if err != nil {
-			fmt.Printf("failed to consume from matchfound stream - %v\n", err)
-			continue
-		}
-
-		// entries, err := g.rdb.XRead(ctx, &goredis.XReadArgs{
-		// 	Streams: []string{redis.MatchfoundStream, "$"},
-		// 	Count:   1,
-		// 	Block:   0,
-		// }).Result()
-		// if err != nil {
-		// 	fmt.Printf("failed to read from matchmake:found stream - %v\n", err)
-		// 	continue
-		// }
-		// res := entries[0].Messages[0].Values
-
-		// var match matchmake.MatchResponse
-		// err = interfacestruct.Structify(res, &match)
-		// if err != nil {
-		// 	fmt.Printf("failed to scan {%v} into new MatchResponse - %v\n", res, err)
-		// 	continue
-		// }
-		if _, ok := g.hub.Clients[match.UserOneId]; ok {
-			g.hub.Clients[match.UserOneId].MatchmakingMsgCh <- match
-		}
-
-		if _, ok := g.hub.Clients[match.UserTwoId]; ok {
-			g.hub.Clients[match.UserTwoId].MatchmakingMsgCh <- match
-		}
 	}
 }

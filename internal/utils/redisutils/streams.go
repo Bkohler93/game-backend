@@ -3,27 +3,26 @@ package redisutils
 import "github.com/bkohler93/game-backend/pkg/stringuuid"
 
 const (
-	MatchmakeStream        = "matchmake"
-	MatchfoundStream       = MatchmakeStream + ":found"
-	MatchmakePool          = "matchmake:pool"
-	MatchmakeRequestStream = MatchmakeStream + ":request"
-	GameStream             = "game"
+	MatchmakeStream = "matchmake"
+	GameStream      = "game"
 )
 
-func MatchFoundStream(userId stringuuid.StringUUID) string {
-	return MatchfoundStream + ":" + userId.String()
+func GameServerMessageStream() string {
+	return GameStream + ":" + "server_message"
 }
 
-func MatchmakePoolUser(userId stringuuid.StringUUID) string {
-	return MatchmakePool + ":" + userId.String()
+func GameClientMessageStream(clientID stringuuid.StringUUID) string {
+	return GameStream + ":" + "client_message" + ":" + clientID.String()
 }
 
-var AllMatchmakePool = MatchmakePool + ":*"
-
-func GameClientActionStream(gameId stringuuid.StringUUID) string {
-	return GameStream + ":" + gameId.String() + ":client:action"
+func MatchmakingServerMessageStream() string {
+	return MatchmakeStream + ":" + "server_message"
 }
 
-func GameServerResponseStream(userId stringuuid.StringUUID) string {
-	return GameStream + ":server:response:" + userId.String()
+func MatchmakingClientMessageStream(clientID stringuuid.StringUUID) string {
+	return MatchmakeStream + ":" + "client_message" + ":" + clientID.String()
+}
+
+func MatchmakingRoomEventsStream() string {
+	return MatchmakeStream + ":" + "room_events"
 }
