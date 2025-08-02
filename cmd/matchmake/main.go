@@ -2,37 +2,45 @@ package main
 
 import (
 	"context"
-	"os"
 
-	"github.com/bkohler93/game-backend/internal/matchmake"
-	"github.com/bkohler93/game-backend/internal/message"
-	"github.com/bkohler93/game-backend/internal/room"
-	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
+	"github.com/bkohler93/game-backend/internal/app/matchmake"
+	"github.com/bkohler93/game-backend/internal/shared/players"
+	"github.com/bkohler93/game-backend/internal/shared/room"
+	"github.com/bkohler93/game-backend/internal/shared/taskcoordinator"
+	"github.com/bkohler93/game-backend/internal/shared/utils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 )
 
 var ctx = context.Background()
 
 func main() {
-	loadEnv()
-	redisAddr := os.Getenv("REDIS_ADDR")
+	utils.LoadEnv()
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		DB:       0, // use default DB
-		Password: "",
-		Protocol: 2,
-	})
-
-	mb := message.NewRedisStreamClient(redisClient)
-	roomRepository := room.NewRepository(room.NewRedisRoomDAO(redisClient))
-
-	m := matchmake.NewMatchmaker(mb, roomRepository)
-	m.Start(ctx)
-}
-
-func loadEnv() {
-	if os.Getenv("ENV") != "PROD" {
-		godotenv.Load()
+	redisClient, err := redisutils.NewRedisClient(ctx)
+	if err != nil {
+		panic(err)
 	}
+	roomStore, err := room.NewRedisRoomStore(redisClient)
+	if err != nil {
+		panic(err)
+	}
+	playerTrackerStore := players.NewRedisPlayerTrackerStore(redisClient)
+
+	matchmakingTaskStore, err := taskcoordinator.NewRedisMatchmakingTaskStore(redisClient)
+	if err != nil {
+		panic(err)
+	}
+
+	mmClientMsgProducer := matchmake.NewMatchmakingClientMessageRedisProducer(redisClient)
+	roomRepository := room.NewRepository(roomStore)
+	playerRepository := players.NewRepository(playerTrackerStore)
+	matchmakingTaskCoordinator := taskcoordinator.NewMatchmakingTaskCoordinator(matchmakingTaskStore)
+
+	m := matchmake.Matchmaker{
+		MatchmakingClientMessageProducer: mmClientMsgProducer,
+		RoomRepository:                   roomRepository,
+		PlayerRepository:                 playerRepository,
+		MatchmakingTaskCoordinator:       matchmakingTaskCoordinator,
+	}
+	m.Start(ctx)
 }

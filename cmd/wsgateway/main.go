@@ -4,37 +4,32 @@ import (
 	"context"
 	"os"
 
-	"github.com/bkohler93/game-backend/internal/gateway"
-	"github.com/bkohler93/game-backend/internal/message"
-	"github.com/bkohler93/game-backend/internal/room"
-	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
+	"github.com/bkohler93/game-backend/internal/app/gateway"
+	"github.com/bkohler93/game-backend/internal/shared/room"
+	"github.com/bkohler93/game-backend/internal/shared/transport"
+	"github.com/bkohler93/game-backend/internal/shared/utils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 )
 
 var ctx = context.Background()
 
 func main() {
-	loadEnv()
+	utils.LoadEnv()
 	port := os.Getenv("PORT")
-	redisAddr := os.Getenv("REDIS_ADDR")
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		DB:       0, // use default DB
-		Password: "",
-		Protocol: 2,
-	})
+	redisClient, err := redisutils.NewRedisClient(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-	mb := message.NewRedisStreamClient(redisClient)
-	roomRepository := room.NewRepository(room.NewRedisRoomDAO(redisClient))
+	roomStore, err := room.NewRedisRoomStore(redisClient)
+	if err != nil {
+		panic(err)
+	}
+	roomRepository := room.NewRepository(roomStore)
+	matchmakingMsgConsumerFactory := transport.NewRedisMatchmakingClientMessageConsumerFactory(redisClient)
 
-	g := gateway.NewGateway(port, mb, roomRepository)
+	g := gateway.NewGateway(port, roomRepository, matchmakingMsgConsumerFactory)
 
 	g.Start(ctx)
-}
-
-func loadEnv() {
-	if os.Getenv("ENV") != "PROD" {
-		godotenv.Load()
-	}
 }
