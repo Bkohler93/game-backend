@@ -26,12 +26,12 @@ func (m *Matchmaker) Start(ctx context.Context) {
 		fmt.Println("Listening for new Matchmaking messages.")
 
 		var msg message.BaseMatchmakingServerMessage
-		stream := rediskeys.MatchmakingServerMessageStream
-		err := m.MessageBus.Consume(ctx, stream, &msg)
-		if err != nil {
-			fmt.Printf("failed to consume from %s - %v\n", stream, err)
-			continue
-		}
+		//stream := rediskeys.MatchmakingServerMessageStream
+		//err := m.MessageBus.Consume(ctx, stream, &msg)
+		//if err != nil {
+		//	fmt.Printf("failed to consume from %s - %v\n", stream, err)
+		//	continue
+		//}
 		switch msg.Type {
 		case message.ServerMessageTypeMatchmakingRequest:
 			var req message.MatchmakingRequest
@@ -199,7 +199,7 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req message.
 			stream := rediskeys.MatchmakingClientMessageStream(playerId)
 			if playerId == req.UserId {
 				msg := NewRoomChangedMessage(rm.RoomId, rm.PlayerCount, rm.AverageSkill)
-				err = m.MessageBus.Publish(ctx, stream, msg)
+				//TODO err = m.MessageBus.Publish(ctx, stream, msg)
 				if err != nil {
 					fmt.Printf("error publishing %v to %s\n", msg, stream)
 				}
@@ -208,11 +208,12 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req message.
 					fmt.Printf("error storing player in active player list - %v\n", err)
 				}
 			} else {
-				msg := NewPlayerJoinedRoomMessage(req.UserId)
-				err = m.MessageBus.Publish(ctx, stream, msg)
-				if err != nil {
-					fmt.Printf("error publishing %v to %s\n", msg, stream)
-				}
+
+				//TODO msg := NewPlayerJoinedRoomMessage(req.UserId)
+				//TODO err = m.MessageBus.Publish(ctx, stream, msg)
+				//if err != nil {
+				//	fmt.Printf("error publishing %v to %s\n", msg, stream)
+				//}
 			}
 		}
 		break

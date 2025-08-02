@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bkohler93/game-backend/internal/game"
-	"github.com/bkohler93/game-backend/internal/utils"
-	"github.com/bkohler93/game-backend/internal/utils/redisutils"
+	"github.com/bkohler93/game-backend/internal/app/game"
+	"github.com/bkohler93/game-backend/internal/shared/utils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
 )
 

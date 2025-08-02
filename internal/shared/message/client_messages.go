@@ -15,6 +15,8 @@ const (
 	ClientMessageTypeRoomChanged      MatchmakingClientMessageType = "RoomChanged"
 )
 
+type GameClientMessageType string
+
 type BaseMatchmakingClientMessage struct {
 	Type    MatchmakingClientMessageType `json:"type"`
 	Payload json.RawMessage              `json:"payload"`

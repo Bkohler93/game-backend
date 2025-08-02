@@ -3,7 +3,7 @@ package players
 import (
 	"context"
 
-	"github.com/bkohler93/game-backend/internal/utils/redisutils/rediskeys"
+	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
 	"github.com/redis/go-redis/v9"
 )

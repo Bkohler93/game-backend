@@ -5,18 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 
-	"github.com/bkohler93/game-backend/internal/game"
-	"github.com/bkohler93/game-backend/internal/utils"
-	"github.com/bkohler93/game-backend/internal/utils/redisutils"
-	"github.com/bkohler93/game-backend/internal/utils/redisutils/rediskeys"
+	"github.com/bkohler93/game-backend/internal/app/game"
+	"github.com/bkohler93/game-backend/internal/shared/utils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
 	"github.com/redis/go-redis/v9"
 )
 
 var (
-	luaScriptBasePath       = "../../db/redis/scripts"
+	luaScriptBasePath       = "../../../db/redis/scripts"
 	addPlayerToRoomFilePath = fmt.Sprintf("%s/add_player_to_room.lua", luaScriptBasePath)
 )
 
@@ -34,7 +35,11 @@ type RedisStore struct {
 }
 
 func NewRedisRoomStore(rdb *redis.Client) (*RedisStore, error) {
+
 	luaScripts := make(map[string]*redis.Script)
+	dir, _ := os.Getwd()
+
+	fmt.Println("current directory =", dir)
 	addPlayerToRoomSrc, err := utils.LoadLuaSrc(addPlayerToRoomFilePath)
 	if err != nil {
 		return &RedisStore{}, fmt.Errorf("failed to load lua src from '%s' with error - %v", addPlayerToRoomFilePath, err)

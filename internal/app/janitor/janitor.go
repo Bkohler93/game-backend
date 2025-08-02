@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bkohler93/game-backend/internal/matchmake/taskcoordinator"
-	"github.com/bkohler93/game-backend/internal/utils/redisutils/rediskeys"
+	"github.com/bkohler93/game-backend/internal/shared/taskcoordinator"
+	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
 )
 
 var (

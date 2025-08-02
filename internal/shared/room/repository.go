@@ -3,8 +3,8 @@ package room
 import (
 	"context"
 
-	"github.com/bkohler93/game-backend/internal/game"
-	"github.com/bkohler93/game-backend/internal/message"
+	"github.com/bkohler93/game-backend/internal/app/game"
+	"github.com/bkohler93/game-backend/internal/shared/message"
 )
 
 type Repository struct {
