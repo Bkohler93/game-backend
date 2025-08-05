@@ -4,7 +4,7 @@
 set -e
 
 # Parse command line arguments with getopt
-VALID_ARGS=$(getopt -o vcp: --long verbose,coverage,coverage-profile: -- "$@")
+VALID_ARGS=$(getopt -o vcp:r: --long verbose,coverage,coverage-profile:,run: -- "$@")
 if [[ $? -ne 0 ]]; then
     exit 1
 fi
@@ -17,6 +17,8 @@ COVERAGE_FILE="coverage.out"
 APPLY_COVERAGE=0
 APPLY_VERBOSE=0
 APPLY_COVERAGE_PROFILE=0
+APPLY_RUN=0
+RUN_COMMAND=""
 
 eval set -- "$VALID_ARGS"
 while true; do
@@ -34,6 +36,11 @@ while true; do
       COVERAGE_FILE="$2"
       shift 2
       ;;
+    -r|--run)
+      APPLY_RUN=1
+      RUN_COMMAND="$2"
+      shift 2
+      ;; 
     --)
       shift
       break
@@ -89,7 +96,7 @@ if [[ $APPLY_VERBOSE -eq 1 ]]; then
 fi
 
 if [[ $APPLY_COVERAGE -eq 1 ]]; then
-  GO_TEST_CMD+=(-cover -coverprofile=coverage.out)
+  GO_TEST_CMD+=(-cover)
 fi
 
 if [[ $APPLY_COVERAGE_PROFILE -eq 1 ]]; then
@@ -98,6 +105,10 @@ if [[ $APPLY_COVERAGE_PROFILE -eq 1 ]]; then
     exit 1
   fi
   GO_TEST_CMD+=(-coverprofile="$COVERAGE_FILE")
+fi
+
+if [[ $APPLY_RUN -eq 1 ]]; then
+  GO_TEST_CMD+=(-run "$RUN_COMMAND")
 fi
 
 # Append any extra arguments

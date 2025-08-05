@@ -1,7 +1,6 @@
 package message
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
@@ -10,21 +9,29 @@ import (
 type ServerMessageType string
 
 const (
-	ServerMessageTypeMatchmaking ServerMessageType = "Matchmaking"
-	ServerMessageTypeGameplay    ServerMessageType = "Game"
+	Matchmaking ServerMessageType = "Matchmaking"
+	Game        ServerMessageType = "Game"
 )
 
 type MatchmakingServerMessageType string
 
 const (
-	ServerMessageTypeMatchmakingRequest MatchmakingServerMessageType = "MatchmakingRequest"
-	ServerMessageTypeMatchmakingExit    MatchmakingServerMessageType = "MatchmakingExit"
+	RequestMatchmaking MatchmakingServerMessageType = "RequestMatchmaking"
+	ExitMatchmaking    MatchmakingServerMessageType = "ExitMatchmaking"
 )
 
-type BaseMatchmakingServerMessage struct {
-	Type    MatchmakingServerMessageType `json:"type"`
-	Payload json.RawMessage              `json:"payload"` // json.RawMessage holds the raw JSON bytes
-}
+//type BaseMatchmakingServerMessage struct {
+//	Type    MatchmakingServerMessageType `json:"type"`
+//	Payload json.RawMessage              `json:"payload"` // json.RawMessage holds the raw JSON bytes
+//}
+//
+//func (b BaseMatchmakingServerMessage) ToMap() map[string]interface{} {
+//}
+//
+//func (b BaseMatchmakingServerMessage) FromMap(m map[string]interface{}) error {
+//	//TODO implement me
+//	panic("implement me")
+//}
 
 type MatchmakingRequest struct {
 	UserId      stringuuid.StringUUID `redis:"user_id" json:"user_id"`
@@ -34,6 +41,13 @@ type MatchmakingRequest struct {
 	Region      string                `redis:"region" json:"region"`
 }
 
-type ExitMatchmaking struct {
+type MatchmakingExit struct {
 	UserId stringuuid.StringUUID `json:"user_id"`
 }
+
+type GameServerMessageType string
+
+//type BaseGameServerMessage struct {
+//	Type    GameServerMessageType `json:"type"`
+//	Payload json.RawMessage       `json:"payload"` // json.RawMessage holds the raw JSON bytes
+//}

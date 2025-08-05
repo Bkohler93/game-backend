@@ -12,6 +12,7 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/taskcoordinator"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"golang.org/x/sync/errgroup"
 )
 
 type Matchmaker struct {
@@ -21,57 +22,75 @@ type Matchmaker struct {
 	MatchmakingTaskCoordinator       *taskcoordinator.MatchmakingTaskCoordinator
 }
 
-func (m *Matchmaker) Start(ctx context.Context) {
-	for {
-		fmt.Println("Listening for new Matchmaking messages.")
+const (
+	numWorkers = 4
+)
 
-		var msg message.BaseMatchmakingServerMessage
-		//stream := rediskeys.MatchmakingServerMessageStream
-		//err := m.MessageBus.Consume(ctx, stream, &msg)
-		//if err != nil {
-		//	fmt.Printf("failed to consume from %s - %v\n", stream, err)
-		//	continue
-		//}
-		switch msg.Type {
-		case message.ServerMessageTypeMatchmakingRequest:
-			var req message.MatchmakingRequest
-			err := json.Unmarshal(msg.Payload, &req)
-			if err != nil {
-				fmt.Printf("Error unmarshalling matchmaking request: %v\n", err)
-				continue
-			}
-			go m.processMatchmakingRequest(ctx, req)
-			break
-		case message.ServerMessageTypeMatchmakingExit:
-		}
-		// entries, err := m.rdb.XRead(ctx, &goredis.XReadArgs{
-		// 	Streams: []string{"matchmake:request", "$"},
-		// 	Count:   1,
-		// 	Block:   0,
-		// }).Result()
-		// if err != nil {
-		// 	fmt.Printf("failed to read from matchmake:request stream - %v\n", err)
-		// 	continue
-		// }
-		// res := entries[0].Messages[0].Values
-		// var req MatchRequest
-		// err = interfacestruct.Structify(res, &req)
-		//if err != nil {
-		//	fmt.Printf("failed to retrieve new MatchResponse - %v\n", err)
-		//	continue
-		//}
-		//req.TimeReceived = time.Now()
-		//
-		////TODO: Set
-		//// _, err = m.rdb.HSet(ctx, redis.MatchmakePoolUser(req.UserId), req).Result()
-		//err = m.s.StoreKeyValue(ctx, redisutils.MatchmakePoolUser(req.UserId), req)
-		//if err != nil {
-		//	fmt.Printf("failed to request match - %v\n", err)
-		//	return
-		//}
-		//
-		//m.scanForMatches(ctx)
+func (m *Matchmaker) Start(ctx context.Context) {
+	var eg errgroup.Group
+	eg.Go(func() error {
+		return m.HandleMatchmakeRequests(ctx)
+	})
+
+	for i := 0; i < numWorkers; i++ {
+		eg.Go(func() error {
+			return m.makeMatches(ctx)
+		})
 	}
+
+	if err := eg.Wait(); err != nil {
+		fmt.Printf("Matchmaker cancelling due to error - %v", err)
+	}
+	//for {
+	//	fmt.Println("Listening for new Matchmaking messages.")
+	//
+	//	var msg message.BaseMatchmakingServerMessage
+	//	//stream := rediskeys.MatchmakingServerMessageStream
+	//	//err := m.MessageBus.StartConsuming(ctx, stream, &msg)
+	//	//if err != nil {
+	//	//	fmt.Printf("failed to consume from %s - %v\n", stream, err)
+	//	//	continue
+	//	//}
+	//	switch msg.Type {
+	//	case message.ServerMessageTypeMatchmakingRequest:
+	//		var req message.MatchmakingRequest
+	//		err := json.Unmarshal(msg.Payload, &req)
+	//		if err != nil {
+	//			fmt.Printf("Error unmarshalling matchmaking request: %v\n", err)
+	//			continue
+	//		}
+	//		go m.processMatchmakingRequest(ctx, req)
+	//		break
+	//	case message.ServerMessageTypeMatchmakingExit:
+	//	}
+	//	// entries, err := m.rdb.XRead(ctx, &goredis.XReadArgs{
+	//	// 	Streams: []string{"matchmake:request", "$"},
+	//	// 	Count:   1,
+	//	// 	Block:   0,
+	//	// }).Result()
+	//	// if err != nil {
+	//	// 	fmt.Printf("failed to read from matchmake:request stream - %v\n", err)
+	//	// 	continue
+	//	// }
+	//	// res := entries[0].Messages[0].Values
+	//	// var req MatchRequest
+	//	// err = interfacestruct.Structify(res, &req)
+	//	//if err != nil {
+	//	//	fmt.Printf("failed to retrieve new MatchResponse - %v\n", err)
+	//	//	continue
+	//	//}
+	//	//req.TimeReceived = time.Now()
+	//	//
+	//	////TODO: Set
+	//	//// _, err = m.rdb.HSet(ctx, redis.MatchmakePoolUser(req.UserId), req).Result()
+	//	//err = m.s.StoreKeyValue(ctx, redisutils.MatchmakePoolUser(req.UserId), req)
+	//	//if err != nil {
+	//	//	fmt.Printf("failed to request match - %v\n", err)
+	//	//	return
+	//	//}
+	//	//
+	//	//m.scanForMatches(ctx)
+	//}
 }
 
 //func (m *Matchmaker) scanForMatches(ctx context.Context) {
@@ -199,16 +218,19 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req message.
 			stream := rediskeys.MatchmakingClientMessageStream(playerId)
 			if playerId == req.UserId {
 				msg := NewRoomChangedMessage(rm.RoomId, rm.PlayerCount, rm.AverageSkill)
-				//TODO err = m.MessageBus.Publish(ctx, stream, msg)
+				bytes, err := json.Marshal(msg)
 				if err != nil {
-					fmt.Printf("error publishing %v to %s\n", msg, stream)
+					fmt.Printf("failed to marshal object into json -%v\n", err)
+				}
+				//TODO err = m.MessageBus.Publish(ctx, stream, bytes)
+				if err != nil {
+					fmt.Printf("error publishing %v to %s\n", bytes, stream)
 				}
 				err = m.PlayerRepository.SetPlayerActive(ctx, playerId, rm.RoomId)
 				if err != nil {
 					fmt.Printf("error storing player in active player list - %v\n", err)
 				}
 			} else {
-
 				//TODO msg := NewPlayerJoinedRoomMessage(req.UserId)
 				//TODO err = m.MessageBus.Publish(ctx, stream, msg)
 				//if err != nil {
@@ -240,16 +262,45 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req message.
 			fmt.Printf("error creating new room - %v\n", err)
 		}
 		msg := NewRoomChangedMessage(rm.RoomId, rm.PlayerCount, rm.AverageSkill)
-		//err = m.MessageBus.Publish(ctx, stream, msg)
-		err = m.MatchmakingClientMessageProducer.Publish(ctx, req.UserId, msg)
+
+		bytes, err := json.Marshal(msg)
+		if err != nil {
+			fmt.Printf("failed to marshal RoomChangedMessage into Paylaod for BaseMatchmakingClientMessage")
+			panic(err) //TODO don't panic in the middle of a function..
+		}
+
+		err = m.MatchmakingClientMessageProducer.PublishTo(ctx, req.UserId, bytes)
 		if err != nil {
 			fmt.Printf("error publishing - %v", err)
+			return
 		}
 		err = m.PlayerRepository.SetPlayerActive(ctx, req.UserId, rm.RoomId)
 		if err != nil {
 			fmt.Printf("error storing player in active player list - %v\n", err)
 		}
 	}
+}
+
+func (m *Matchmaker) makeMatches(ctx context.Context) error {
+	// TODO:
+	//1. Poll `matchmake_tasks` for the oldest task in the set
+	//2. Atomically remove it from `matchmake_tasks`, insert into `matchmake_inprogress` with current time as score.
+	//3. Query for compatible rooms (region/skill/time_created to adjust skill further).
+	//4. If a match is found:
+	//    - Perform atomic room combine (player transfer, skill/count update).
+	//    - Remove affected room IDs from both queues.
+	//    - Publish results to `matchmake:client_message:<client_id>`. Could be either types `room_full` or `room_combined` with an updated playercount.
+	//5. If no match:
+	//    - Update retry info (in room or hash).
+	//    - Compute new retry time and move back to `matchmake_tasks`.
+	//
+	//If idle, workers block on pubsub `matchmake:notify_workers`, which is published to anytime an inactive `matchmake_inprogress` is detected or a room is created after an unsuccessful initial matchmake attempt.
+	return nil
+}
+
+func (m *Matchmaker) HandleMatchmakeRequests(ctx context.Context) error {
+	//m.matchmakingClientMessageConsumer.StartConsuming(ctx)
+	return nil
 }
 
 func canMatch(u1 message.MatchmakingRequest, u2 message.MatchmakingRequest) bool {

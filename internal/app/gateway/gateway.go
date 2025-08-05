@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/shared/room"
-	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/gorilla/websocket"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -18,30 +18,30 @@ const (
 )
 
 type Gateway struct {
-	//mb             message.MessageBus
-	matchmakingMessageConsumerFactory transport.MatchmakingClientMessageConsumerFactory
-	roomRepository                    *room.Repository
-	addr                              string
-	hub                               *Hub
+	matchmakingClientMessageConsumerFactory MatchmakingClientMessageConsumerFactory
+	matchmakingServerMessageProducer        MatchmakingServerMessageProducer
+	roomRepository                          *room.Repository
+	addr                                    string
+	hub                                     *Hub
 }
 
-func NewGateway(addr string, rr *room.Repository, matchmakingMessageConsumerFactory transport.MatchmakingClientMessageConsumerFactory) Gateway {
+func NewGateway(addr string, rr *room.Repository, matchmakingClientMessageConsumerFactory MatchmakingClientMessageConsumerFactory, matchmakingServerMessageProducer MatchmakingServerMessageProducer) Gateway {
 	return Gateway{
-		roomRepository:                    rr,
-		addr:                              addr,
-		matchmakingMessageConsumerFactory: matchmakingMessageConsumerFactory,
-		hub:                               NewHub(),
+		roomRepository:                          rr,
+		addr:                                    addr,
+		matchmakingClientMessageConsumerFactory: matchmakingClientMessageConsumerFactory,
+		matchmakingServerMessageProducer:        matchmakingServerMessageProducer,
+		hub:                                     NewHub(),
 	}
 }
 
 func (g *Gateway) Start(ctx context.Context) {
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		ctx, cf := context.WithCancel(ctx)
+		eg, ctx := errgroup.WithContext(ctx)
 
-		client, err := NewClient(ctx, w, r, g.matchmakingMessageConsumerFactory)
+		client, err := NewClient(ctx, w, r, g.matchmakingClientMessageConsumerFactory, g.matchmakingServerMessageProducer)
 		if err != nil {
 			fmt.Printf("failed to initialize client websocket - %v\n", err)
-			cf()
 			return
 		}
 		defer func(conn *websocket.Conn) {
@@ -52,15 +52,27 @@ func (g *Gateway) Start(ctx context.Context) {
 		}(client.conn)
 
 		g.hub.RegisterCh <- client
+		eg.Go(func() error {
+			return client.PingLoop(ctx)
+		})
 
-		go client.PingLoop(ctx, cf)
+		eg.Go(func() error {
+			return client.writePump(ctx)
+		})
 
-		go client.writePump(ctx, cf)
-		go client.readPump(ctx, cf)
+		eg.Go(func() error {
+			return client.readPump(ctx)
+		})
 
-		go client.listenToRedis(ctx, cf)
+		eg.Go(func() error {
+			return client.listenToServices(ctx)
+		})
 
-		<-ctx.Done()
+		if err = eg.Wait(); err != nil {
+			fmt.Printf("worker encountered an error - %v", err)
+		} else {
+			fmt.Println("workers ended with no errors")
+		}
 
 		g.hub.UnregisterCh <- client
 	})

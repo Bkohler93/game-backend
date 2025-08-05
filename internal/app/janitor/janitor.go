@@ -121,27 +121,4 @@ func (j *Janitor) CleanupMatchmakeTasksInProgress(ctx context.Context) {
 	if err != nil {
 		fmt.Printf("failed to reclaim old inprogress tasks with err - %v\n", err)
 	}
-	//key := rediskeys.MatchmakeTaskInProgressSortedSet
-	//
-	//staleRoomIds, err := j.rdb.ZRangeByScore(ctx, key, &redis.ZRangeBy{
-	//	Min: "-",
-	//	Max: maxTime,
-	//}).Result()
-	//if err != nil {
-	//	fmt.Printf("failed to retrieve stale room id's - %v\n", err)
-	//	return
-	//}
-	//
-	//for _, rmId := range staleRoomIds {
-	//	//TODO lua script for atomic remove member from InProgress Set into Pending Set with time Now for processing
-	//	roomId := stringuuid.StringUUID(rmId)
-	//	inProgressKey := rediskeys.MatchmakeTaskInProgressKey(roomId)
-	//	pendingKey := rediskeys.MatchmakeTaskPendingKey(roomId)
-	//	n := time.Now().Unix()
-	//	err := j.scripts[staleMatchmakingToPendingLuaPath].Run(ctx, j.rdb, []string{inProgressKey, pendingKey}, n).Err()
-	//	if err != nil {
-	//		fmt.Printf("failed to run script at %s - %v\n", staleMatchmakingToPendingLuaPath, err)
-	//		return
-	//	}
-	//}
 }

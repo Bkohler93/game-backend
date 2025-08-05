@@ -11,15 +11,16 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
 	"github.com/gorilla/websocket"
+	"golang.org/x/sync/errgroup"
 )
 
 type Client struct {
-	conn                   *websocket.Conn
-	MatchmakingMsgCh       chan message.BaseMatchmakingClientMessage
-	GameMsgCh              chan message.BaseGameClientMessage
-	ID                     stringuuid.StringUUID
-	matchmakingMsgConsumer transport.MatchmakingClientMessageConsumer
-	// rdb              *redis.RedisClient
+	conn                         *websocket.Conn
+	MatchmakingMsgCh             chan transport.WrappedConsumeMsg
+	GameMsgCh                    chan transport.WrappedConsumeMsg
+	ID                           stringuuid.StringUUID
+	matchmakingClientMsgConsumer MatchmakingClientMessageConsumer
+	matchmakingServerMsgProducer MatchmakingServerMessageProducer
 }
 
 var upgrader = websocket.Upgrader{}
@@ -28,7 +29,7 @@ const (
 	pingInterval = 10
 )
 
-func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, matchmakingMsgFactory transport.MatchmakingClientMessageConsumerFactory) (*Client, error) {
+func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, matchmakingMsgFactory MatchmakingClientMessageConsumerFactory, matchmakingServerMsgProducer MatchmakingServerMessageProducer) (*Client, error) {
 	var c *Client
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -42,224 +43,168 @@ func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, matc
 		return nil
 	})
 	id := stringuuid.NewStringUUID() //TODO this should be stored by the client, or retrieved from a database
-	matchmakingMsgConsumer, err := matchmakingMsgFactory.CreateConsumer(ctx, id)
+	matchmakingClientMsgConsumer, err := matchmakingMsgFactory.CreateConsumer(ctx, id.String())
 	if err != nil {
 		return c, err
 	}
 
 	c = &Client{
-		conn:                   conn,
-		MatchmakingMsgCh:       make(chan message.BaseMatchmakingClientMessage),
-		GameMsgCh:              make(chan message.BaseGameClientMessage),
-		ID:                     id,
-		matchmakingMsgConsumer: matchmakingMsgConsumer,
+		conn:                         conn,
+		MatchmakingMsgCh:             make(chan transport.WrappedConsumeMsg),
+		GameMsgCh:                    make(chan transport.WrappedConsumeMsg),
+		ID:                           id,
+		matchmakingClientMsgConsumer: matchmakingClientMsgConsumer,
+		matchmakingServerMsgProducer: matchmakingServerMsgProducer,
 	}
 	return c, nil
 }
 
-func (c *Client) PingLoop(ctx context.Context, cf context.CancelFunc) {
+func (c *Client) PingLoop(ctx context.Context) error {
 	t := time.NewTicker(time.Second * pingInterval)
-	fmt.Printf("client{%s} spawned PingLoop\n", c.ID.String())
 	for {
 		select {
 		case <-t.C:
 			err := c.conn.WriteMessage(websocket.PingMessage, []byte("PING"))
 			if err != nil {
-				fmt.Printf("client{%s} failed to send PING\n", c.ID.String())
-				cf()
+				return fmt.Errorf("ws{%s} failed to send PING - %v", c.ID.String(), err)
 			}
-			fmt.Printf("client{%s} sent PING\n", c.ID.String())
+			fmt.Printf("ws{%s} sent PING\n", c.ID.String())
 		case <-ctx.Done():
 			t.Stop()
-			return
+			return nil
 		}
 	}
 }
 
-func (c *Client) writePump(ctx context.Context, connCancelFunc context.CancelFunc) {
-	var bytes []byte
-	var err error
+func (c *Client) writePump(ctx context.Context) error {
 	for {
-		var message BaseMessage
+		var outMsg []byte
+		var ackFunc func() error
 		select {
 		case <-ctx.Done():
-			return
-		case msg := <-c.MatchmakingMsgCh:
-			bytes, err = json.Marshal(msg)
-			if err != nil {
-				fmt.Printf("failed to marshal outgoing matchmaking msg - %v\n", err)
-				continue
-			}
-			message.Payload = bytes
-		case msg := <-c.GameMsgCh:
-			bytes, err = json.Marshal(msg)
-			if err != nil {
-				fmt.Printf("failed to marshal outgoing game message msg - %v\n", err)
-				continue
-			}
-			message.Payload = bytes
+			return nil
+		case matchmakingMsg := <-c.MatchmakingMsgCh:
+			ackFunc = matchmakingMsg.AckFunc
+			outMsg = matchmakingMsg.Payload
+		case gameMsg := <-c.GameMsgCh:
+			ackFunc = gameMsg.AckFunc
+			outMsg = gameMsg.Payload
 		}
-		finalBytes, err := json.Marshal(message)
+		err := c.conn.WriteMessage(websocket.TextMessage, outMsg)
 		if err != nil {
-			fmt.Printf("failed to marshal final output message - %v\n", err)
-			continue
+			return fmt.Errorf("failed to write to websocket - %v", err)
 		}
-		fmt.Printf("sending %s\n", string(finalBytes))
-		err = c.conn.WriteMessage(websocket.TextMessage, finalBytes)
+		err = ackFunc()
 		if err != nil {
-			fmt.Println("failed to write to websocket", err)
-			connCancelFunc()
-			return
+			fmt.Printf("failed to successfully call ACK for outgoing message")
 		}
 	}
 }
 
-func (c *Client) readPump(ctx context.Context, connCancelFunc context.CancelFunc) {
-	for {
-		readChan := make(chan []byte)
-		errChan := make(chan error, 1) // Buffered channel for error to prevent goroutine leak if main loop exits
+func (c *Client) readPump(ctx context.Context) error {
+	readChan := make(chan []byte)
+	errChan := make(chan error, 1) // Buffered channel for error to prevent goroutine leak if main loop exits
 
-		go func() {
+	go func() {
+		defer close(readChan)
+		defer close(errChan)
+
+		for {
 			messageType, p, err := c.conn.ReadMessage()
 			if err != nil {
 				errChan <- err
 				return
 			}
-			if messageType == websocket.TextMessage || messageType == websocket.BinaryMessage {
-				readChan <- p
-			} else {
-				errChan <- fmt.Errorf("unhandled websocket message type: %d", messageType)
-			}
-		}()
 
-		select {
-		case <-ctx.Done():
-			return
-		case bytes := <-readChan:
-			var bm BaseMessage
-			err := json.Unmarshal(bytes, &bm)
-			if err != nil {
-				fmt.Printf("client %s: failed to unmarshal message: %v\n", c.ID, err)
-				connCancelFunc()
+			if messageType != websocket.TextMessage && messageType != websocket.BinaryMessage {
+				errChan <- fmt.Errorf("unhandled message type: %d", messageType)
 				return
 			}
-			c.ForwardMessageToService(bm, ctx, connCancelFunc)
+			readChan <- p
+		}
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+
 		case err := <-errChan:
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-				fmt.Printf("client %s: websocket connection closed by the client - %v\n", c.ID, err.Error())
-			} else if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				fmt.Printf("client %s: websocket unexpectedly closed - %v\n", c.ID, err.Error())
+				fmt.Printf("client %s: websocket connection closed by the client - %v\n", c.ID, err)
+				return nil
+			}
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				fmt.Printf("client %s: websocket unexpectedly closed - %v\n", c.ID, err)
 			} else {
 				fmt.Printf("client %s: websocket encountered an error: %v\n", c.ID, err)
 			}
-			connCancelFunc()
-			return
+			return err
+
+		case bytes, ok := <-readChan:
+			if !ok {
+				return nil
+			}
+			var envelope message.Envelope
+			err := json.Unmarshal(bytes, &envelope)
+			if err != nil {
+				fmt.Printf("client %s: failed to unmarshal message: %v\n", c.ID, err)
+				continue
+			}
+			if err = c.RouteMessage(envelope, ctx); err != nil {
+				fmt.Printf("routing message failed - %v\n", err)
+			}
 		}
 	}
 }
 
-func (c *Client) ForwardMessageToService(msg BaseMessage, ctx context.Context, connCancelFunc context.CancelFunc) {
-	switch msg.ServiceType {
-	case MatchmakingService:
-		var action message.GameClientActionBase
+func (c *Client) RouteMessage(msg message.Envelope, ctx context.Context) error {
+	switch msg.Type {
+	case string(MatchmakingService):
+		return c.matchmakingServerMsgProducer.Publish(ctx, msg.Payload)
 
-		err := json.Unmarshal(msg.Payload, &action)
-		if err != nil {
-			fmt.Printf("error unmarsheling gameplay message %v\n", err)
-			connCancelFunc()
-		}
-		//TODO err = c.m.Publish(ctx, rediskeys.GameServerMessageStream(action.GameID), action)
-		if err != nil {
-			fmt.Printf("error forwarding gameplay message %v\n", err)
-			connCancelFunc()
-		}
-		// _, err := c.rdb.XAdd(ctx, &goredis.XAddArgs{
-		// 	Stream: redis.GameServerMessageStream(action.GameID),
-		// 	Values: action,
-		// 	ID:     "*",
-		// }).Result()
-	case GameService:
-		var serverMsg message.BaseMatchmakingServerMessage
-		err := json.Unmarshal(msg.Payload, &serverMsg)
-		if err != nil {
-			fmt.Printf("failed to unmarshal msg payload - %v", err)
-			connCancelFunc()
-			return
-		}
-		//TODO err = c.m.Publish(ctx, rediskeys.MatchmakingServerMessageStream, serverMsg)
+	case string(GameService):
+		//TODO err = c.m.Publish(ctx, rediskeys.GameServerMessageStream, msg.Payload)
 	default:
-		fmt.Println("unexpected gateway.ServiceType", msg.ServiceType)
-		connCancelFunc()
+		fmt.Println("unexpected gateway.ServiceType", msg.Type)
 	}
+	return nil
 }
 
-func (c *Client) listenToRedis(ctx context.Context, connCancelFunc context.CancelFunc) {
-	// read from matchmake client message stream
-	go func() {
+func (c *Client) listenToServices(ctx context.Context) error {
+	msgCh, errCh := c.matchmakingClientMsgConsumer.StartConsuming(ctx)
+
+	eg, gCtx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
 		for {
 			select {
-			case <-ctx.Done():
-				return
-			default:
-				//err := c.m.Consume(ctx, rediskeys.MatchmakingClientMessageStream(c.ID), &msg)
-				msg, err := c.matchmakingMsgConsumer.Consume(ctx)
-				// entries, err := c.rdb.XRead(ctx, &goredis.XReadArgs{
-				// 	Streams: []string{redis.MatchFoundStream(c.ID), "$"},
-				// 	Count:   1,
-				// 	Block:   0,
-				// }).Result()
-				// if err != nil {
-				// 	fmt.Printf("failed to read from match found stream - %v\n", err)
-				// 	continue
-				// }
-				// if len(entries) == 0 || len(entries[0].Messages) == 0 {
-				// 	fmt.Printf("read from match found stream zero results")
-				// 	continue
-				// }
-				// data := entries[0].Messages[0].Values
-
-				// res := matchmake.EmptyMatchMadeMessage()
-				// err := interfacestruct.Structify(data, &res)
-				if err != nil {
-					fmt.Printf("failed to get new MatchResponse - %v\n", err)
+			case <-gCtx.Done():
+				return nil
+			case wrappedMatchmakingMsg, ok := <-msgCh:
+				if !ok {
+					return nil
 				}
-				c.MatchmakingMsgCh <- msg
-				return
+				wrappedMatchmakingMsg.AckFunc = func() error {
+					return c.matchmakingClientMsgConsumer.AckMessage(gCtx, wrappedMatchmakingMsg.ID)
+				}
+				select {
+				case c.MatchmakingMsgCh <- wrappedMatchmakingMsg:
+				case <-gCtx.Done():
+					return nil
+				}
 			}
 		}
-	}()
+	})
 
-	// read from game client message stream
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				//TODO: ReadFromBlocking
-				//res := game.ServerResponse{}
-				//err := c.m.Consume(ctx, rediskeys.GameClientMessageStream(c.ID), &res)
-				// entries, err := c.rdb.XRead(ctx, &goredis.XReadArgs{
-				// 	Streams: []string{redis.GameServerResponseStream(c.ID), "$"},
-				// 	Count:   1,
-				// 	Block:   0,
-				// }).Result()
-				// if err != nil {
-				// 	fmt.Printf("failed to read from game server response stream - %v\n", err)
-				// }
-				// data := entries[0].Messages[0].Values
-				// if len(entries) == 0 || len(entries[0].Messages) == 0 {
-				// 	fmt.Printf("read from game server response stream with zero results")
-				// 	continue
-				// }
-
-				// var res game.ServerResponse
-				// err = interfacestruct.Structify(data, &res)
-				//if err != nil {
-				//	fmt.Printf("failed to new MatchResponse - %v\n", err)
-				//}
-				//c.GameMsgCh <- res
-			}
+	eg.Go(func() error {
+		select {
+		case <-gCtx.Done():
+			return nil
+		case err := <-errCh:
+			return err
 		}
-	}()
+	})
+
+	return eg.Wait()
 }

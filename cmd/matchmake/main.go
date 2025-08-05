@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/bkohler93/game-backend/internal/app/matchmake"
 	"github.com/bkohler93/game-backend/internal/shared/players"
@@ -11,10 +14,10 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 )
 
-var ctx = context.Background()
-
 func main() {
 	utils.LoadEnv()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	redisClient, err := redisutils.NewRedisClient(ctx)
 	if err != nil {
@@ -32,6 +35,7 @@ func main() {
 	}
 
 	mmClientMsgProducer := matchmake.NewMatchmakingClientMessageRedisProducer(redisClient)
+	//mmServerMsgConsumer := matchmake.NewMatchmakingServerMessageRedisConsumer(redisClient)
 	roomRepository := room.NewRepository(roomStore)
 	playerRepository := players.NewRepository(playerTrackerStore)
 	matchmakingTaskCoordinator := taskcoordinator.NewMatchmakingTaskCoordinator(matchmakingTaskStore)
