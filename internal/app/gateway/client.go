@@ -19,8 +19,8 @@ type Client struct {
 	MatchmakingMsgCh             chan transport.WrappedConsumeMsg
 	GameMsgCh                    chan transport.WrappedConsumeMsg
 	ID                           stringuuid.StringUUID
-	matchmakingClientMsgConsumer MatchmakingClientMessageConsumer
-	matchmakingServerMsgProducer MatchmakingServerMessageProducer
+	matchmakingClientMsgConsumer transport.MessageConsumer
+	matchmakingServerMsgProducer transport.MessageProducer
 }
 
 var upgrader = websocket.Upgrader{}
@@ -29,7 +29,7 @@ const (
 	pingInterval = 10
 )
 
-func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, matchmakingMsgFactory MatchmakingClientMessageConsumerFactory, matchmakingServerMsgProducer MatchmakingServerMessageProducer) (*Client, error) {
+func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, matchmakingMsgConsumerFactory transport.MessageConsumerFactory, matchmakingServerMsgProducer transport.MessageProducer) (*Client, error) {
 	var c *Client
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -43,7 +43,7 @@ func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, matc
 		return nil
 	})
 	id := stringuuid.NewStringUUID() //TODO this should be stored by the client, or retrieved from a database
-	matchmakingClientMsgConsumer, err := matchmakingMsgFactory.CreateConsumer(ctx, id.String())
+	matchmakingClientMsgConsumer, err := matchmakingMsgConsumerFactory.CreateConsumer(ctx, id.String())
 	if err != nil {
 		return c, err
 	}

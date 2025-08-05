@@ -10,13 +10,14 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/players"
 	"github.com/bkohler93/game-backend/internal/shared/room"
 	"github.com/bkohler93/game-backend/internal/shared/taskcoordinator"
+	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
 	"github.com/bkohler93/game-backend/pkg/stringuuid"
 	"golang.org/x/sync/errgroup"
 )
 
 type Matchmaker struct {
-	MatchmakingClientMessageProducer MatchmakingClientMessageProducer
+	MatchmakingClientMessageProducer transport.DynamicMessageProducer
 	RoomRepository                   *room.Repository
 	PlayerRepository                 *players.Repository
 	MatchmakingTaskCoordinator       *taskcoordinator.MatchmakingTaskCoordinator

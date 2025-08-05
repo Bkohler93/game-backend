@@ -8,10 +8,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type MatchmakingServerMessageConsumer interface {
-	transport.RedisMessageConsumer
-}
-
 type RedisMatchmakingServerMessageConsumer struct {
 	*transport.RedisMessageConsumer
 }

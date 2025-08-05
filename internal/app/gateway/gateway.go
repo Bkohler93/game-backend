@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/shared/room"
+	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/gorilla/websocket"
 	"golang.org/x/sync/errgroup"
 )
@@ -18,14 +19,14 @@ const (
 )
 
 type Gateway struct {
-	matchmakingClientMessageConsumerFactory MatchmakingClientMessageConsumerFactory
-	matchmakingServerMessageProducer        MatchmakingServerMessageProducer
+	matchmakingClientMessageConsumerFactory transport.MessageConsumerFactory
+	matchmakingServerMessageProducer        transport.MessageProducer
 	roomRepository                          *room.Repository
 	addr                                    string
 	hub                                     *Hub
 }
 
-func NewGateway(addr string, rr *room.Repository, matchmakingClientMessageConsumerFactory MatchmakingClientMessageConsumerFactory, matchmakingServerMessageProducer MatchmakingServerMessageProducer) Gateway {
+func NewGateway(addr string, rr *room.Repository, matchmakingClientMessageConsumerFactory transport.MessageConsumerFactory, matchmakingServerMessageProducer transport.MessageProducer) Gateway {
 	return Gateway{
 		roomRepository:                          rr,
 		addr:                                    addr,

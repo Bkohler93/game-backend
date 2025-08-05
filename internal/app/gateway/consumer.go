@@ -10,14 +10,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type MatchmakingClientMessageConsumer interface {
-	transport.MessageConsumer
-}
-
-type MatchmakingClientMessageConsumerFactory interface {
-	transport.MessageConsumerFactory
-}
-
 type RedisMatchmakingClientMessageConsumerFactory struct {
 	rdb *redis.Client
 }
@@ -39,8 +31,6 @@ func NewRedisMatchmakingClientMessageConsumerFactory(rdb *redis.Client) *RedisMa
 	return &RedisMatchmakingClientMessageConsumerFactory{rdb: rdb}
 }
 
-// RedisMatchmakingClientMessageConsumer
-// - this is created per websocket connection by the Websocket Gateway.
 type RedisMatchmakingClientMessageConsumer struct {
 	*transport.RedisMessageConsumer
 }

@@ -8,14 +8,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type MatchmakingServerMessageProducer interface {
-	transport.MessageProducer
-}
-
-type MatchmakingServerMessageProducerFactory interface {
-	transport.MessageProducerFactory
-}
-
 type RedisMatchmakingServerMessageProducer struct {
 	*transport.RedisMessageProducer
 }

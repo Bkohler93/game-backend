@@ -50,7 +50,7 @@ func createFlushFunc(cancel context.CancelFunc, wg *sync.WaitGroup, rdb *redis.C
 func TestRedisMatchmakingClientMessageConsumerAndProducer(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var userId stringuuid.StringUUID
-	startup := func(t *testing.T) (consumer transport.MessageConsumer, producer matchmake.MatchmakingClientMessageProducer, flush func()) {
+	startup := func(t *testing.T) (consumer transport.MessageConsumer, producer transport.DynamicMessageProducer, flush func()) {
 		client, err := redisutils.NewRedisClient(ctx)
 		if err != nil {
 			panic(err)
