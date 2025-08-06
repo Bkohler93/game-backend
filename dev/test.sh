@@ -1,18 +1,15 @@
 #!/bin/bash
 
-# Exit immediately if a command exits with a non-zero status.
 set -e
 
-# Parse command line arguments with getopt
 VALID_ARGS=$(getopt -o vcp:r: --long verbose,coverage,coverage-profile:,run: -- "$@")
 if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
-CONTAINER_NAME="my-redis-test-$(date +%s)" # Use a unique name for each test run
-REDIS_PORT=6379 # Default Redis port
+CONTAINER_NAME="my-redis-test-$(date +%s)"
+REDIS_PORT=6379 
 
-# calling parameters
 COVERAGE_FILE="coverage.out"
 APPLY_COVERAGE=0
 APPLY_VERBOSE=0
@@ -101,7 +98,7 @@ fi
 
 if [[ $APPLY_COVERAGE_PROFILE -eq 1 ]]; then
   if [[ $APPLY_COVERAGE -eq 0 ]]; then
-    echo "Error: --coverage or -c for code coverage must be applied along with coverage profile" >&2 # Redirect to standard error
+    echo "Error: --coverage or -c for code coverage must be applied along with coverage profile" >&2 
     exit 1
   fi
   GO_TEST_CMD+=(-coverprofile="$COVERAGE_FILE")
@@ -111,7 +108,6 @@ if [[ $APPLY_RUN -eq 1 ]]; then
   GO_TEST_CMD+=(-run "$RUN_COMMAND")
 fi
 
-# Append any extra arguments
 GO_TEST_CMD+=("$@")
 
 echo "Executing: ${GO_TEST_CMD[*]}"
