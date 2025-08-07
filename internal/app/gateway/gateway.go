@@ -5,34 +5,26 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 
+	"github.com/bkohler93/game-backend/internal/app/gateway/client"
 	"github.com/bkohler93/game-backend/internal/shared/room"
-	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/gorilla/websocket"
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	pongWait       = 60 * time.Second
-	maxMessageSize = 512
-)
-
 type Gateway struct {
-	matchmakingClientMessageConsumerFactory transport.MessageConsumerFactory
-	matchmakingServerMessageProducer        transport.MessageProducer
-	roomRepository                          *room.Repository
-	addr                                    string
-	hub                                     *Hub
+	clientTransportBusFactory *client.ClientTransportBusFactory
+	roomRepository            *room.Repository
+	addr                      string
+	hub                       *Hub
 }
 
-func NewGateway(addr string, rr *room.Repository, matchmakingClientMessageConsumerFactory transport.MessageConsumerFactory, matchmakingServerMessageProducer transport.MessageProducer) Gateway {
+func NewGateway(addr string, rr *room.Repository, clientTransportBusFactory *client.ClientTransportBusFactory) Gateway {
 	return Gateway{
-		roomRepository:                          rr,
-		addr:                                    addr,
-		matchmakingClientMessageConsumerFactory: matchmakingClientMessageConsumerFactory,
-		matchmakingServerMessageProducer:        matchmakingServerMessageProducer,
-		hub:                                     NewHub(),
+		clientTransportBusFactory: clientTransportBusFactory,
+		roomRepository:            rr,
+		addr:                      addr,
+		hub:                       NewHub(),
 	}
 }
 
@@ -40,7 +32,7 @@ func (g *Gateway) Start(ctx context.Context) {
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		eg, ctx := errgroup.WithContext(ctx)
 
-		client, err := NewClient(ctx, w, r, g.matchmakingClientMessageConsumerFactory, g.matchmakingServerMessageProducer)
+		c, err := client.NewClient(ctx, w, r, g.clientTransportBusFactory)
 		if err != nil {
 			fmt.Printf("failed to initialize client websocket - %v\n", err)
 			return
@@ -50,23 +42,23 @@ func (g *Gateway) Start(ctx context.Context) {
 			if err != nil {
 				fmt.Printf("failed to close connection - %v\n", err)
 			}
-		}(client.conn)
+		}(c.Conn)
 
-		g.hub.RegisterCh <- client
+		g.hub.RegisterCh <- c
 		eg.Go(func() error {
-			return client.PingLoop(ctx)
+			return c.PingLoop(ctx)
 		})
 
 		eg.Go(func() error {
-			return client.writePump(ctx)
+			return c.WritePump(ctx)
 		})
 
 		eg.Go(func() error {
-			return client.readPump(ctx)
+			return c.ReadPump(ctx)
 		})
 
 		eg.Go(func() error {
-			return client.listenToServices(ctx)
+			return c.ListenToServices(ctx)
 		})
 
 		if err = eg.Wait(); err != nil {
@@ -75,7 +67,7 @@ func (g *Gateway) Start(ctx context.Context) {
 			fmt.Println("workers ended with no errors")
 		}
 
-		g.hub.UnregisterCh <- client
+		g.hub.UnregisterCh <- c
 	})
 
 	fmt.Printf("listening on %s for new matchmaking requests from clients\n", g.addr)

@@ -3,21 +3,22 @@ package gateway
 import (
 	"fmt"
 
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/internal/app/gateway/client"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 type Hub struct {
-	Clients map[stringuuid.StringUUID]*Client
+	Clients map[uuidstring.ID]*client.Client
 
-	RegisterCh   chan *Client
-	UnregisterCh chan *Client
+	RegisterCh   chan *client.Client
+	UnregisterCh chan *client.Client
 }
 
 func NewHub() *Hub {
 	h := &Hub{
-		Clients:      map[stringuuid.StringUUID]*Client{},
-		RegisterCh:   make(chan *Client),
-		UnregisterCh: make(chan *Client),
+		Clients:      map[uuidstring.ID]*client.Client{},
+		RegisterCh:   make(chan *client.Client),
+		UnregisterCh: make(chan *client.Client),
 	}
 
 	go func() {
@@ -26,7 +27,7 @@ func NewHub() *Hub {
 			case c := <-h.RegisterCh:
 				h.Clients[c.ID] = c
 			case c := <-h.UnregisterCh:
-				err := c.conn.Close()
+				err := c.Conn.Close()
 				if err != nil {
 					fmt.Printf("error closing client's(%s) websocket conn - %v", c.ID.String(), err)
 				}

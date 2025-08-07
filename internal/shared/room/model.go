@@ -1,16 +1,27 @@
 package room
 
 import (
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 type Room struct {
-	RoomId            stringuuid.StringUUID   `json:"room_id"`
-	PlayerCount       int                     `json:"player_count"`
-	AverageSkill      int                     `json:"average_skill"`
-	Region            string                  `json:"region"`
-	PlayerIds         []stringuuid.StringUUID `json:"player_ids"`
-	CreatedAt         int64                   `json:"created_at"`
-	MatchmakeAttempts int                     `json:"matchmake_attempts"`
-	IsFull            int                     `json:"is_full"`
+	RoomId            uuidstring.ID   `json:"room_id"`
+	PlayerCount       int             `json:"player_count"`
+	AverageSkill      int             `json:"average_skill"`
+	Region            string          `json:"region"`
+	PlayerIds         []uuidstring.ID `json:"player_ids"`
+	CreatedAt         int64           `json:"created_at"`
+	MatchmakeAttempts int             `json:"matchmake_attempts"`
+	IsFull            int             `json:"is_full"`
+}
+
+type QueryRoomRequest struct {
+	Skill       int
+	TimeCreated int64
+	Region      string
+}
+
+type JoinRoomRequest struct {
+	UserId uuidstring.ID
+	Skill  int
 }

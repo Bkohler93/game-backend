@@ -8,11 +8,10 @@ import (
 	"os"
 	"slices"
 
-	"github.com/bkohler93/game-backend/internal/app/game"
 	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -23,10 +22,10 @@ var (
 
 type Store interface {
 	CreateRoomIndex(context.Context) error
-	GetRoom(context.Context, stringuuid.StringUUID) (Room, error)
+	GetRoom(context.Context, uuidstring.ID) (Room, error)
 	InsertRoom(context.Context, Room) error
 	QueryOpenRooms(ctx context.Context, region string, minAvgSkill, maxAvgSkill, maxPlayerCount int) ([]Room, error)
-	JoinRoom(ctx context.Context, roomId stringuuid.StringUUID, userId stringuuid.StringUUID, userSkill int) (Room, error) //returns number of players in room
+	JoinRoom(ctx context.Context, roomId uuidstring.ID, userId uuidstring.ID, userSkill int) (Room, error) //returns number of players in room
 }
 
 type RedisStore struct {
@@ -52,7 +51,7 @@ func NewRedisRoomStore(rdb *redis.Client) (*RedisStore, error) {
 	}, nil
 }
 
-func (store *RedisStore) GetRoom(ctx context.Context, roomId stringuuid.StringUUID) (Room, error) {
+func (store *RedisStore) GetRoom(ctx context.Context, roomId uuidstring.ID) (Room, error) {
 	key := rediskeys.RoomsJSONObject(roomId)
 	js, err := store.rdb.JSONGet(ctx, key, "$").Result()
 	if err != nil {
@@ -66,10 +65,10 @@ func (store *RedisStore) GetRoom(ctx context.Context, roomId stringuuid.StringUU
 	return rooms[0], nil
 }
 
-func (store *RedisStore) JoinRoom(ctx context.Context, roomId stringuuid.StringUUID, userId stringuuid.StringUUID, userSkill int) (Room, error) {
+func (store *RedisStore) JoinRoom(ctx context.Context, roomId uuidstring.ID, userId uuidstring.ID, userSkill int) (Room, error) {
 	var room Room
 	key := rediskeys.RoomsJSONObject(roomId)
-	result, err := store.lua[addPlayerToRoomFilePath].Run(ctx, store.rdb, []string{key}, userId.String(), userSkill, game.MaxPlayers).Result()
+	result, err := store.lua[addPlayerToRoomFilePath].Run(ctx, store.rdb, []string{key}, userId.String(), userSkill, 2).Result() //TODO the '2' magic value should be a constant depending on the game that is being matchmaked more
 	if err != nil {
 		return room, err
 	}

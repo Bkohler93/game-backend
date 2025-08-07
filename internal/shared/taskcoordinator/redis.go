@@ -8,7 +8,7 @@ import (
 
 	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -47,30 +47,30 @@ func NewRedisMatchmakingTaskStore(rdb *redis.Client) (*RedisMatchmakingTaskStore
 	return r, nil
 }
 
-func (r *RedisMatchmakingTaskStore) AddInProgressTask(ctx context.Context, roomID stringuuid.StringUUID, score int64) error {
+func (r *RedisMatchmakingTaskStore) AddInProgressTask(ctx context.Context, roomID uuidstring.ID, score int64) error {
 	return r.rdb.ZAdd(ctx, rediskeys.MatchmakeTaskInProgressSortedSetKey, redis.Z{
 		Score:  float64(score),
 		Member: roomID,
 	}).Err()
 }
 
-func (r *RedisMatchmakingTaskStore) AddPendingTask(ctx context.Context, roomID stringuuid.StringUUID, score int64) error {
+func (r *RedisMatchmakingTaskStore) AddPendingTask(ctx context.Context, roomID uuidstring.ID, score int64) error {
 	return r.rdb.ZAdd(ctx, rediskeys.MatchmakeTaskPendingSortedSetKey, redis.Z{
 		Score:  float64(score),
 		Member: roomID,
 	}).Err()
 }
 
-func (r *RedisMatchmakingTaskStore) RemoveInProgressTask(ctx context.Context, roomID stringuuid.StringUUID) error {
+func (r *RedisMatchmakingTaskStore) RemoveInProgressTask(ctx context.Context, roomID uuidstring.ID) error {
 	return r.rdb.ZRem(ctx, rediskeys.MatchmakeTaskInProgressSortedSetKey, roomID).Err()
 }
 
-func (r *RedisMatchmakingTaskStore) RemovePendingTask(ctx context.Context, roomID stringuuid.StringUUID) error {
+func (r *RedisMatchmakingTaskStore) RemovePendingTask(ctx context.Context, roomID uuidstring.ID) error {
 	return r.rdb.ZRem(ctx, rediskeys.MatchmakeTaskPendingSortedSetKey, roomID).Err()
 }
 
-func (r *RedisMatchmakingTaskStore) GetStaleInProgressTasks(ctx context.Context, cutoff int64) ([]stringuuid.StringUUID, error) {
-	var roomIds []stringuuid.StringUUID
+func (r *RedisMatchmakingTaskStore) GetStaleInProgressTasks(ctx context.Context, cutoff int64) ([]uuidstring.ID, error) {
+	var roomIds []uuidstring.ID
 	members, err := r.rdb.ZRangeByScore(ctx, rediskeys.MatchmakeTaskInProgressSortedSetKey, &redis.ZRangeBy{
 		Min:   "0",
 		Max:   fmt.Sprintf("%f", float64(cutoff)),
@@ -80,13 +80,13 @@ func (r *RedisMatchmakingTaskStore) GetStaleInProgressTasks(ctx context.Context,
 		return roomIds, err
 	}
 	for _, m := range members {
-		roomId := stringuuid.StringUUID(m)
+		roomId := uuidstring.ID(m)
 		roomIds = append(roomIds, roomId)
 	}
 	return roomIds, err
 }
 
-func (r *RedisMatchmakingTaskStore) MoveInProgressToPendingTask(ctx context.Context, roomID stringuuid.StringUUID) error {
+func (r *RedisMatchmakingTaskStore) MoveInProgressToPendingTask(ctx context.Context, roomID uuidstring.ID) error {
 	t := time.Now().Unix()
 	err := r.lua[staleMatchmakingToPendingLuaPath].Run(
 		ctx,
@@ -103,7 +103,7 @@ func (r *RedisMatchmakingTaskStore) MoveInProgressToPendingTask(ctx context.Cont
 	return err
 }
 
-func (r *RedisMatchmakingTaskStore) ClaimPendingTask(ctx context.Context) (stringuuid.StringUUID, error) {
+func (r *RedisMatchmakingTaskStore) ClaimPendingTask(ctx context.Context) (uuidstring.ID, error) {
 	now := time.Now().Unix()
 
 	res, err := r.lua[claimPendingMoveToInProgressLuaPath].Run(
@@ -123,5 +123,5 @@ func (r *RedisMatchmakingTaskStore) ClaimPendingTask(ctx context.Context) (strin
 	if !ok {
 		return "", errors.New(UnexpectedRedisResultErr)
 	}
-	return stringuuid.StringUUID(taskID), nil
+	return uuidstring.ID(taskID), nil
 }

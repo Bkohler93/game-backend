@@ -3,7 +3,7 @@ package rediskeys
 import (
 	"fmt"
 
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 const (
@@ -12,17 +12,17 @@ const (
 	MatchmakeNotifyWorkersPubSub = "matchmake:notify_worker"
 )
 
-func GameServerMessageStream(gameId stringuuid.StringUUID) string {
+func GameServerMessageStream(gameId uuidstring.ID) string {
 	return fmt.Sprintf("%s:server_message:%s", gameStream, gameId)
 }
 
-func GameClientMessageStream(clientId stringuuid.StringUUID) string {
+func GameClientMessageStream(clientId uuidstring.ID) string {
 	return fmt.Sprintf("%s:client_message:%s", gameStream, clientId)
 }
 
 var MatchmakingServerMessageStream = fmt.Sprintf("%s:server_message", matchmakeStream)
 
-func MatchmakingClientMessageStream(clientId stringuuid.StringUUID) string {
+func MatchmakingClientMessageStream(clientId uuidstring.ID) string {
 	return fmt.Sprintf("%s:client_message:%s", matchmakeStream, clientId)
 }
 

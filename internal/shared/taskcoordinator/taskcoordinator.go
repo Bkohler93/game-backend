@@ -3,7 +3,7 @@ package taskcoordinator
 import (
 	"context"
 
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 type MatchmakingTaskCoordinator struct {
@@ -16,7 +16,7 @@ func NewMatchmakingTaskCoordinator(store MatchmakingTaskStore) *MatchmakingTaskC
 	}
 }
 
-func (c *MatchmakingTaskCoordinator) ClaimNextPendingTask(ctx context.Context) (stringuuid.StringUUID, error) {
+func (c *MatchmakingTaskCoordinator) ClaimNextPendingTask(ctx context.Context) (uuidstring.ID, error) {
 	roomID, err := c.store.ClaimPendingTask(ctx)
 	if err != nil {
 		return "", err
@@ -24,7 +24,7 @@ func (c *MatchmakingTaskCoordinator) ClaimNextPendingTask(ctx context.Context) (
 	return roomID, err
 }
 
-func (c *MatchmakingTaskCoordinator) ReclaimStaleInProgressTasks(ctx context.Context, cutoff int64) ([]stringuuid.StringUUID, error) {
+func (c *MatchmakingTaskCoordinator) ReclaimStaleInProgressTasks(ctx context.Context, cutoff int64) ([]uuidstring.ID, error) {
 	stale, err := c.store.GetStaleInProgressTasks(ctx, cutoff)
 	if err != nil {
 		return nil, err

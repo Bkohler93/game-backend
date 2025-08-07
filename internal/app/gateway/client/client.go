@@ -1,4 +1,4 @@
-package gateway
+package client
 
 import (
 	"context"
@@ -9,27 +9,28 @@ import (
 
 	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/internal/shared/transport"
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/gorilla/websocket"
 	"golang.org/x/sync/errgroup"
 )
 
 type Client struct {
-	conn                         *websocket.Conn
-	MatchmakingMsgCh             chan transport.WrappedConsumeMsg
-	GameMsgCh                    chan transport.WrappedConsumeMsg
-	ID                           stringuuid.StringUUID
-	matchmakingClientMsgConsumer transport.MessageConsumer
-	matchmakingServerMsgProducer transport.MessageProducer
+	Conn             *websocket.Conn
+	MatchmakingMsgCh chan transport.WrappedConsumeMsg
+	GameMsgCh        chan transport.WrappedConsumeMsg
+	ID               uuidstring.ID
+	TransportBus     *ClientTransportBus
 }
 
 var upgrader = websocket.Upgrader{}
 
 const (
-	pingInterval = 10
+	pingInterval   = 10
+	pongWait       = 60 * time.Second
+	maxMessageSize = 512
 )
 
-func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, matchmakingMsgConsumerFactory transport.MessageConsumerFactory, matchmakingServerMsgProducer transport.MessageProducer) (*Client, error) {
+func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, transportBusFactory *ClientTransportBusFactory) (*Client, error) {
 	var c *Client
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -42,19 +43,17 @@ func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, matc
 		conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
-	id := stringuuid.NewStringUUID() //TODO this should be stored by the client, or retrieved from a database
-	matchmakingClientMsgConsumer, err := matchmakingMsgConsumerFactory.CreateConsumer(ctx, id.String())
-	if err != nil {
-		return c, err
-	}
+	id := uuidstring.NewID() //TODO this should be stored by the client, or retrieved from a database
+	transportBus := transportBusFactory.NewClientTransportBus(id)
 
 	c = &Client{
-		conn:                         conn,
-		MatchmakingMsgCh:             make(chan transport.WrappedConsumeMsg),
-		GameMsgCh:                    make(chan transport.WrappedConsumeMsg),
-		ID:                           id,
-		matchmakingClientMsgConsumer: matchmakingClientMsgConsumer,
-		matchmakingServerMsgProducer: matchmakingServerMsgProducer,
+		Conn:             conn,
+		MatchmakingMsgCh: make(chan transport.WrappedConsumeMsg),
+		GameMsgCh:        make(chan transport.WrappedConsumeMsg),
+		ID:               id,
+		TransportBus:     transportBus,
+		//matchmakingClientMsgConsumer: matchmakingClientMsgConsumer,
+		//matchmakingServerMsgProducer: matchmakingServerMsgProducer,
 	}
 	return c, nil
 }
@@ -64,7 +63,7 @@ func (c *Client) PingLoop(ctx context.Context) error {
 	for {
 		select {
 		case <-t.C:
-			err := c.conn.WriteMessage(websocket.PingMessage, []byte("PING"))
+			err := c.Conn.WriteMessage(websocket.PingMessage, []byte("PING"))
 			if err != nil {
 				return fmt.Errorf("ws{%s} failed to send PING - %v", c.ID.String(), err)
 			}
@@ -76,7 +75,8 @@ func (c *Client) PingLoop(ctx context.Context) error {
 	}
 }
 
-func (c *Client) writePump(ctx context.Context) error {
+func (c *Client) WritePump(ctx context.Context) error {
+
 	for {
 		var outMsg []byte
 		var ackFunc func() error
@@ -84,13 +84,20 @@ func (c *Client) writePump(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case matchmakingMsg := <-c.MatchmakingMsgCh:
-			ackFunc = matchmakingMsg.AckFunc
-			outMsg = matchmakingMsg.Payload
+			messageId := matchmakingMsg.ID
+			outMsg = matchmakingMsg.Payload.([]byte)
+			ackFunc = func() error {
+				return c.TransportBus.AckMatchmakingMsg(ctx, messageId)
+			}
 		case gameMsg := <-c.GameMsgCh:
-			ackFunc = gameMsg.AckFunc
-			outMsg = gameMsg.Payload
+			//messageId := gameMsg.ID
+			outMsg = gameMsg.Payload.([]byte)
+			ackFunc = func() error {
+				//TODO return c.TransportBus.AckGameMsg(ctx, messageId)
+				return nil
+			}
 		}
-		err := c.conn.WriteMessage(websocket.TextMessage, outMsg)
+		err := c.Conn.WriteMessage(websocket.TextMessage, outMsg)
 		if err != nil {
 			return fmt.Errorf("failed to write to websocket - %v", err)
 		}
@@ -101,7 +108,7 @@ func (c *Client) writePump(ctx context.Context) error {
 	}
 }
 
-func (c *Client) readPump(ctx context.Context) error {
+func (c *Client) ReadPump(ctx context.Context) error {
 	readChan := make(chan []byte)
 	errChan := make(chan error, 1) // Buffered channel for error to prevent goroutine leak if main loop exits
 
@@ -110,7 +117,7 @@ func (c *Client) readPump(ctx context.Context) error {
 		defer close(errChan)
 
 		for {
-			messageType, p, err := c.conn.ReadMessage()
+			messageType, p, err := c.Conn.ReadMessage()
 			if err != nil {
 				errChan <- err
 				return
@@ -160,19 +167,19 @@ func (c *Client) readPump(ctx context.Context) error {
 
 func (c *Client) RouteMessage(msg message.Envelope, ctx context.Context) error {
 	switch msg.Type {
-	case string(MatchmakingService):
-		return c.matchmakingServerMsgProducer.Publish(ctx, msg.Payload)
+	case string(message.MatchmakingService):
+		return c.TransportBus.SendMatchmakingServerMessage(ctx, msg.Payload)
 
-	case string(GameService):
-		//TODO err = c.m.Publish(ctx, rediskeys.GameServerMessageStream, msg.Payload)
+	case string(message.GameService):
+		//TODO err = c.m.Send(ctx, rediskeys.GameServerMessageStream, msg.Payload)
 	default:
 		fmt.Println("unexpected gateway.ServiceType", msg.Type)
 	}
 	return nil
 }
 
-func (c *Client) listenToServices(ctx context.Context) error {
-	msgCh, errCh := c.matchmakingClientMsgConsumer.StartConsuming(ctx)
+func (c *Client) ListenToServices(ctx context.Context) error {
+	matchmakingMsgCh, matchmakingErrCh := c.TransportBus.StartReceivingMatchmakingClientMessages(ctx)
 
 	eg, gCtx := errgroup.WithContext(ctx)
 
@@ -181,18 +188,11 @@ func (c *Client) listenToServices(ctx context.Context) error {
 			select {
 			case <-gCtx.Done():
 				return nil
-			case wrappedMatchmakingMsg, ok := <-msgCh:
-				if !ok {
+			case wrappedMatchmakingMsg, open := <-matchmakingMsgCh:
+				if !open {
 					return nil
 				}
-				wrappedMatchmakingMsg.AckFunc = func() error {
-					return c.matchmakingClientMsgConsumer.AckMessage(gCtx, wrappedMatchmakingMsg.ID)
-				}
-				select {
-				case c.MatchmakingMsgCh <- wrappedMatchmakingMsg:
-				case <-gCtx.Done():
-					return nil
-				}
+				c.MatchmakingMsgCh <- wrappedMatchmakingMsg
 			}
 		}
 	})
@@ -201,7 +201,7 @@ func (c *Client) listenToServices(ctx context.Context) error {
 		select {
 		case <-gCtx.Done():
 			return nil
-		case err := <-errCh:
+		case err := <-matchmakingErrCh:
 			return err
 		}
 	})

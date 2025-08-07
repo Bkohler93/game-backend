@@ -2,21 +2,18 @@ package room
 
 import (
 	"context"
-
-	"github.com/bkohler93/game-backend/internal/app/game"
-	"github.com/bkohler93/game-backend/internal/shared/message"
 )
 
 type Repository struct {
 	store Store
 }
 
-func (r *Repository) QueryOpenRooms(ctx context.Context, req message.MatchmakingRequest) ([]Room, error) {
+func (r *Repository) QueryOpenRooms(ctx context.Context, req QueryRoomRequest) ([]Room, error) {
 	minSkill, maxSkill := CalculateMinMaxSkill(req.Skill, req.TimeCreated)
-	return r.store.QueryOpenRooms(ctx, req.Region, minSkill, maxSkill, game.MaxPlayers)
+	return r.store.QueryOpenRooms(ctx, req.Region, minSkill, maxSkill, 2) //TODO the '2' magic number should be a constant used for whatever game is being queried for
 }
 
-func (r *Repository) JoinRoom(ctx context.Context, req message.MatchmakingRequest, room Room) (Room, error) {
+func (r *Repository) JoinRoom(ctx context.Context, req JoinRoomRequest, room Room) (Room, error) {
 	return r.store.JoinRoom(ctx, room.RoomId, req.UserId, req.Skill)
 }
 

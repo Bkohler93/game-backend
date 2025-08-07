@@ -10,7 +10,7 @@ import (
 	"github.com/bkohler93/game-backend/internal/app/game"
 	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 func TestNewRedisRoomStoreMethods(t *testing.T) {
@@ -77,24 +77,24 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 		ctx := t.Context()
 
 		r1 := Room{
-			RoomId:       stringuuid.NewStringUUID(),
+			RoomId:       uuidstring.NewID(),
 			PlayerCount:  1,
 			AverageSkill: 100,
 			Region:       "na",
-			PlayerIds: []stringuuid.StringUUID{
-				stringuuid.NewStringUUID(),
+			PlayerIds: []uuidstring.ID{
+				uuidstring.NewID(),
 			},
 			CreatedAt: time.Now().Add(time.Second * 30 * -1).Unix(),
 			IsFull:    0,
 		}
 
 		r2 := Room{
-			RoomId:       stringuuid.NewStringUUID(),
+			RoomId:       uuidstring.NewID(),
 			PlayerCount:  1,
 			AverageSkill: 105,
 			Region:       "na",
-			PlayerIds: []stringuuid.StringUUID{
-				stringuuid.NewStringUUID(),
+			PlayerIds: []uuidstring.ID{
+				uuidstring.NewID(),
 			},
 			CreatedAt: time.Now().Add(time.Second * 30 * -2).Unix(),
 			IsFull:    0,
@@ -113,7 +113,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 			t.Errorf("StoreRoom(r2) should not result in an error. Got - %v", err)
 		}
 
-		now := time.Now()
+		now := time.Now().Unix()
 		mySkill := 110
 		region := "na"
 
@@ -133,7 +133,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 
 	t.Run("test add player to room", func(t *testing.T) {
 		ctx := t.Context()
-		userId := stringuuid.NewStringUUID()
+		userId := uuidstring.NewID()
 		userSkill := 100
 		_, err := store.QueryOpenRooms(ctx, "na", 90, 120, game.MaxPlayers)
 		if err != nil {
@@ -154,7 +154,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 		r := RandomRoom()
 		r.AverageSkill = 100
 
-		newUserId := stringuuid.NewStringUUID()
+		newUserId := uuidstring.NewID()
 		newUserSkill := 102
 
 		expected := 101
@@ -198,7 +198,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 
 func TestCalculateThreshold(t *testing.T) {
 	t.Run("test 31 second old time", func(t *testing.T) {
-		tm := time.Now().Add(time.Second * -31)
+		tm := time.Now().Add(time.Second * -31).Unix()
 
 		expected := 30
 		actual := CalculateSkillThreshold(tm)
@@ -209,7 +209,7 @@ func TestCalculateThreshold(t *testing.T) {
 	})
 
 	t.Run("test 0 second old time", func(t *testing.T) {
-		tm := time.Now()
+		tm := time.Now().Unix()
 
 		expected := BaseSkillThreshold
 		actual := CalculateSkillThreshold(tm)
@@ -220,7 +220,7 @@ func TestCalculateThreshold(t *testing.T) {
 	})
 
 	t.Run("test 61 second old time", func(t *testing.T) {
-		tm := time.Now().Add(time.Second * -61)
+		tm := time.Now().Add(time.Second * -61).Unix()
 
 		expected := 50
 		actual := CalculateSkillThreshold(tm)

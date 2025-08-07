@@ -6,26 +6,38 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/redis/go-redis/v9"
 )
 
 type WrappedConsumeMsg struct {
 	ID      string
-	Payload []byte
-	AckFunc func() error
+	Payload any
 }
 
-type MessageConsumer interface {
-	StartConsuming(ctx context.Context) (<-chan WrappedConsumeMsg, <-chan error)
+type MessageGroupConsumerType string
+type MessageGroupConsumer interface {
+	StartReceiving(ctx context.Context) (<-chan WrappedConsumeMsg, <-chan error)
 	AckMessage(ctx context.Context, msgId string) error
 }
 
-type MessageConsumerFactory interface {
-	CreateConsumer(ctx context.Context, consumer string) (MessageConsumer, error)
+type MessageConsumerType string
+type MessageConsumer interface {
+	StartReceiving(ctx context.Context) (<-chan WrappedConsumeMsg, <-chan error)
 }
 
-type RedisMessageConsumer struct {
+type MessageGroupConsumerBuilderFunc = func(consumerId string) MessageGroupConsumer
+type MessageGroupConsumerFactory interface {
+	CreateGroupConsumer(ctx context.Context, consumer string) (MessageGroupConsumer, error)
+}
+
+type BroadcastConsumerType string
+type BroadcastConsumer interface {
+	Subscribe(ctx context.Context) (<-chan message.Discriminable, error)
+}
+
+type RedisMessageGroupConsumer struct {
 	rdb           *redis.Client
 	stream        string
 	consumerGroup string
@@ -39,8 +51,8 @@ var (
 	consumerBlockDuration = time.Second * 5
 )
 
-func NewRedisMessageConsumer(ctx context.Context, rdb *redis.Client, stream, consumerGroup, consumer string) (*RedisMessageConsumer, error) {
-	var r *RedisMessageConsumer
+func NewRedisMessageGroupConsumer(ctx context.Context, rdb *redis.Client, stream, consumerGroup, consumer string) (*RedisMessageGroupConsumer, error) {
+	var r *RedisMessageGroupConsumer
 	luaScripts := make(map[string]*redis.Script)
 	atomicAckDelSrc, err := utils.LoadLuaSrc(atomicAckDelFilePath)
 	if err != nil {
@@ -48,7 +60,7 @@ func NewRedisMessageConsumer(ctx context.Context, rdb *redis.Client, stream, con
 	}
 	luaScripts[atomicAckDelFilePath] = redis.NewScript(atomicAckDelSrc)
 
-	r = &RedisMessageConsumer{
+	r = &RedisMessageGroupConsumer{
 		rdb:           rdb,
 		stream:        stream,
 		consumerGroup: consumerGroup,
@@ -58,7 +70,7 @@ func NewRedisMessageConsumer(ctx context.Context, rdb *redis.Client, stream, con
 	return r, err
 }
 
-func (mc *RedisMessageConsumer) StartConsuming(ctx context.Context) (<-chan WrappedConsumeMsg, <-chan error) {
+func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan WrappedConsumeMsg, <-chan error) {
 	msgCh := make(chan WrappedConsumeMsg)
 	errCh := make(chan error, 1)
 
@@ -85,11 +97,14 @@ func (mc *RedisMessageConsumer) StartConsuming(ctx context.Context) (<-chan Wrap
 					errCh <- fmt.Errorf("error reading from MatchmakingClientMessage stream - %v", err)
 					return
 				}
+				fmt.Println("Received values", streamResults[0].Messages[0].Values)
 				data, ok := streamResults[0].Messages[0].Values["payload"].(string)
+				fmt.Println("received data", data)
 				if !ok {
 					fmt.Printf("MatchmakingClientMessageConsumer has error trying to structure the stream reply - %v", err)
 				}
 				bytes := []byte(data)
+				fmt.Println("bytes", bytes)
 				id := streamResults[0].Messages[0].ID
 
 				msgCh <- WrappedConsumeMsg{
@@ -102,6 +117,6 @@ func (mc *RedisMessageConsumer) StartConsuming(ctx context.Context) (<-chan Wrap
 	return msgCh, errCh
 }
 
-func (mc *RedisMessageConsumer) AckMessage(ctx context.Context, msgId string) error {
+func (mc *RedisMessageGroupConsumer) AckMessage(ctx context.Context, msgId string) error {
 	return mc.luaScripts[atomicAckDelFilePath].Run(ctx, mc.rdb, []string{mc.stream}, mc.consumerGroup, msgId).Err()
 }

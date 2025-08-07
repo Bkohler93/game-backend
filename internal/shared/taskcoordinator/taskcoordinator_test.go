@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
@@ -34,7 +34,7 @@ func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
 		store, flushRedis := startup(t)
 		defer flushRedis()
 
-		roomID := stringuuid.NewStringUUID()
+		roomID := uuidstring.NewID()
 		now := time.Now().Unix()
 
 		err := store.AddPendingTask(ctx, roomID, now)
@@ -50,7 +50,7 @@ func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
 	t.Run("get pending task when no available tasks should return error", func(t *testing.T) {
 		store, flushRedis := startup(t)
 		defer flushRedis()
-		roomID := stringuuid.NewStringUUID()
+		roomID := uuidstring.NewID()
 
 		futureScore := time.Now().Add(time.Second * 2).Unix()
 		err := store.AddPendingTask(ctx, roomID, futureScore)
@@ -73,7 +73,7 @@ func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
 		store, flushRedis := startup(t)
 		defer flushRedis()
 
-		roomID := stringuuid.NewStringUUID()
+		roomID := uuidstring.NewID()
 		nowScore := time.Now().Unix()
 
 		err := store.AddPendingTask(ctx, roomID, nowScore)
@@ -94,10 +94,10 @@ func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
 		store, flushRedis := startup(t)
 		defer flushRedis()
 
-		roomOneID := stringuuid.NewStringUUID()
+		roomOneID := uuidstring.NewID()
 		timeOne := time.Now().Add(time.Second * -2).Unix()
 
-		roomTwoID := stringuuid.NewStringUUID()
+		roomTwoID := uuidstring.NewID()
 		timeTwo := time.Now().Add(time.Second * -3).Unix()
 
 		expectedRoomID := roomTwoID
@@ -147,7 +147,7 @@ func TestRedisMatchmakingStore_InProgressTasks(t *testing.T) {
 	t.Run("test add member to in progress redis store", func(t *testing.T) {
 		store, flushRedis := startup(t)
 		defer flushRedis()
-		roomID := stringuuid.NewStringUUID()
+		roomID := uuidstring.NewID()
 		now := time.Now().Unix()
 
 		err := store.AddInProgressTask(ctx, roomID, now)
@@ -159,7 +159,7 @@ func TestRedisMatchmakingStore_InProgressTasks(t *testing.T) {
 	t.Run("test delete member from in progress redis store", func(t *testing.T) {
 		store, flushRedis := startup(t)
 		defer flushRedis()
-		roomID := stringuuid.NewStringUUID()
+		roomID := uuidstring.NewID()
 		now := time.Now().Unix()
 
 		err := store.AddInProgressTask(ctx, roomID, now)
@@ -176,14 +176,14 @@ func TestRedisMatchmakingStore_InProgressTasks(t *testing.T) {
 		store, flushRedis := startup(t)
 		defer flushRedis()
 
-		expectedIDs := make(map[stringuuid.StringUUID]time.Time)
-		allIDs := make(map[stringuuid.StringUUID]time.Time)
+		expectedIDs := make(map[uuidstring.ID]time.Time)
+		allIDs := make(map[uuidstring.ID]time.Time)
 
 		now := time.Now()
 		allowableTaskStartTime := now.Add(time.Second * -5) //allow < 5 seconds ago
 
 		for i := 0; i < 10; i++ {
-			roomID := stringuuid.NewStringUUID()
+			roomID := uuidstring.NewID()
 			tm := now.Add(time.Second * time.Duration(i) * -1)
 			fmt.Println("adding time", tm)
 			err := store.AddInProgressTask(ctx, roomID, tm.Unix())

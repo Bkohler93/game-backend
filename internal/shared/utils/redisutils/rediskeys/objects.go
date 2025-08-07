@@ -3,7 +3,7 @@ package rediskeys
 import (
 	"fmt"
 
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 const (
@@ -11,16 +11,16 @@ const (
 	MatchmakeTaskInProgressSortedSetKey = "matchmake:task:inprogress"
 )
 
-func RoomsJSONObject(roomId stringuuid.StringUUID) string {
+func RoomsJSONObject(roomId uuidstring.ID) string {
 	return fmt.Sprintf("rooms:%s", roomId)
 }
 
-func PlayerString(playerId stringuuid.StringUUID) string {
+func PlayerString(playerId uuidstring.ID) string {
 	return fmt.Sprintf("players:%s", playerId)
 }
 
 var MatchmakingServerMessageCGroup = fmt.Sprintf("%s:server_message:cgroup", matchmakeStream)
 
-func MatchmakingClientMessageCGroup(clientID stringuuid.StringUUID) string {
+func MatchmakingClientMessageCGroup(clientID uuidstring.ID) string {
 	return fmt.Sprintf("%s:client_message:cgroup:%s", matchmakeStream, clientID)
 }

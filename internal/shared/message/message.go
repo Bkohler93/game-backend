@@ -3,15 +3,64 @@ package message
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 )
+
+type ServiceType string
+
+const (
+	MatchmakingService ServiceType = "MatchmakingService"
+	GameService        ServiceType = "GameService"
+)
+
+type Message interface {
+	Discriminable
+	Identifiable
+}
 
 type Discriminable interface {
 	GetDiscriminator() string
 }
 
+type Identifiable interface {
+	IDGettable
+	IDSettable
+}
+
+type IDGettable interface {
+	GetID() string
+}
+
+type IDSettable interface {
+	SetID(string)
+}
+
 var PrintTypeDiscriminator = func(i any) string {
 	return reflect.TypeOf(i).String()
+}
+
+func UnmarshalWrappedType[T Discriminable](data []byte, typeRegistry map[string]func() T) (T, error) {
+	var zeroValue T
+	var temp struct {
+		TypeDiscriminator string `json:"$type"`
+	}
+	fmt.Println("temp struct", temp)
+	if err := json.Unmarshal(data, &temp); err != nil {
+		fmt.Println("returning error", err)
+		return zeroValue, err
+	}
+	fmt.Println("temp struct type discriminator", temp.TypeDiscriminator)
+
+	if constructor, ok := typeRegistry[temp.TypeDiscriminator]; ok {
+		concreteMessage := constructor()
+		if err := json.Unmarshal(data, &concreteMessage); err != nil {
+			return concreteMessage, err
+		}
+		return concreteMessage, nil
+	}
+
+	return zeroValue, fmt.Errorf("unknown matchmaking message type: %s", temp.TypeDiscriminator)
 }
 
 type Envelope struct {

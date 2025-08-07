@@ -3,7 +3,7 @@ package room
 import (
 	"time"
 
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 const (
@@ -20,20 +20,21 @@ var SortedByCreatedAtFunc = func(a, b Room) int {
 }
 
 func RandomRoom() Room {
-	id := stringuuid.NewStringUUID()
+	id := uuidstring.NewID()
 	return Room{
 		RoomId:       id,
 		PlayerCount:  1,
 		AverageSkill: 100,
 		Region:       "na",
-		PlayerIds:    []stringuuid.StringUUID{id},
+		PlayerIds:    []uuidstring.ID{id},
 		CreatedAt:    time.Now().Unix(),
 		IsFull:       0,
 	}
 }
 
-func CalculateSkillThreshold(t time.Time) int {
+func CalculateSkillThreshold(tUnix int64) int {
 	skillDiffAllowed := BaseSkillThreshold
+	t := time.Unix(tUnix, 0)
 	for i := 1; i > 0; i++ {
 		if time.Since(t) > thirtySecInterval*time.Duration(i) {
 			skillDiffAllowed += SkillThresholdDelta * i
@@ -44,7 +45,7 @@ func CalculateSkillThreshold(t time.Time) int {
 	return skillDiffAllowed
 }
 
-func CalculateMinMaxSkill(mySkill int, roomCreatedAt time.Time) (int, int) {
+func CalculateMinMaxSkill(mySkill int, roomCreatedAt int64) (int, int) {
 	skillDiffAllowed := CalculateSkillThreshold(roomCreatedAt)
 	minSkill := max(0, mySkill-skillDiffAllowed)
 	maxSkill := mySkill + skillDiffAllowed

@@ -10,8 +10,11 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/players"
 	"github.com/bkohler93/game-backend/internal/shared/room"
 	"github.com/bkohler93/game-backend/internal/shared/taskcoordinator"
+	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 func main() {
@@ -33,18 +36,25 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	serverId := uuidstring.NewID()
 
-	mmClientMsgProducer := matchmake.NewMatchmakingClientMessageRedisProducer(redisClient)
-	//mmServerMsgConsumer := matchmake.NewMatchmakingServerMessageRedisConsumer(redisClient)
 	roomRepository := room.NewRepository(roomStore)
 	playerRepository := players.NewRepository(playerTrackerStore)
 	matchmakingTaskCoordinator := taskcoordinator.NewMatchmakingTaskCoordinator(matchmakingTaskStore)
 
+	matchmakingClientMessageProducer := transport.NewRedisDynamicMessageProducer(redisClient, rediskeys.MatchmakingClientMessageStream)
+	matchmakingServerMessageConsumer, err := transport.NewRedisMessageGroupConsumer(ctx, redisClient, rediskeys.MatchmakingServerMessageStream, rediskeys.MatchmakingServerMessageCGroup, serverId.String())
+	if err != nil {
+		panic(err)
+	}
+	bus := matchmake.NewBus(matchmakingServerMessageConsumer, matchmakingClientMessageProducer)
+
 	m := matchmake.Matchmaker{
-		MatchmakingClientMessageProducer: mmClientMsgProducer,
-		RoomRepository:                   roomRepository,
-		PlayerRepository:                 playerRepository,
-		MatchmakingTaskCoordinator:       matchmakingTaskCoordinator,
+		//MatchmakingClientMessageProducer: matchmakingClientMessageProducer,
+		TransportBus:               bus,
+		RoomRepository:             roomRepository,
+		PlayerRepository:           playerRepository,
+		MatchmakingTaskCoordinator: matchmakingTaskCoordinator,
 	}
 	m.Start(ctx)
 }

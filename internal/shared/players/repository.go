@@ -3,7 +3,7 @@ package players
 import (
 	"context"
 
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 type Repository struct {
@@ -17,10 +17,10 @@ func NewRepository(store TrackerStore) *Repository {
 	}
 }
 
-func (r *Repository) SetPlayerActive(ctx context.Context, playerId stringuuid.StringUUID, roomId stringuuid.StringUUID) error {
+func (r *Repository) SetPlayerActive(ctx context.Context, playerId uuidstring.ID, roomId uuidstring.ID) error {
 	return r.trackerStore.Set(ctx, playerId, roomId)
 }
 
-func (r *Repository) GetPlayerRoom(ctx context.Context, playerId stringuuid.StringUUID) (stringuuid.StringUUID, error) {
+func (r *Repository) GetPlayerRoom(ctx context.Context, playerId uuidstring.ID) (uuidstring.ID, error) {
 	return r.trackerStore.Get(ctx, playerId)
 }

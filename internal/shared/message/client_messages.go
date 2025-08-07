@@ -1,7 +1,7 @@
 package message
 
 import (
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 //type BaseMatchmakingClientMessage struct {
@@ -43,6 +43,6 @@ type GameClientMessageType string
 //}
 
 type GameClientActionBase struct {
-	GameID   stringuuid.StringUUID
-	ClientID stringuuid.StringUUID
+	GameID   uuidstring.ID
+	ClientID uuidstring.ID
 }

@@ -5,31 +5,41 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/redis/go-redis/v9"
 )
 
+type MessageProducerType string
 type MessageProducer interface {
-	Publish(ctx context.Context, data json.RawMessage) error
+	Send(ctx context.Context, msg any) error
 }
+type MessageProducerBuilderFunc = func() MessageProducer
 
+type DynamicMessageProducerType string
 type DynamicMessageProducer interface {
-	PublishTo(ctx context.Context, recipientId stringuuid.StringUUID, data json.RawMessage) error
+	SendTo(ctx context.Context, recipientId uuidstring.ID, msg any) error
 }
 
-type MessageProducerFactory interface {
-	CreateProducer(ctx context.Context) (MessageProducer, error)
+type BroadcastProducerType string
+type BroadcastProducer interface {
+	Publish(ctx context.Context, msg any) error
 }
 
 type RedisDynamicMessageProducer struct {
 	rdb    *redis.Client
-	stream func(stringuuid.StringUUID) string
+	stream func(uuidstring.ID) string
 }
 
-func (r *RedisDynamicMessageProducer) PublishTo(ctx context.Context, recipientId stringuuid.StringUUID, data json.RawMessage) error {
-	values := map[string]interface{}{
-		"payload": []byte(data),
+func (r *RedisDynamicMessageProducer) SendTo(ctx context.Context, recipientId uuidstring.ID, msg any) error {
+	fmt.Println("object to marshal: ", msg)
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
 	}
+	values := map[string]interface{}{
+		"payload": data,
+	}
+	fmt.Println("values", values)
 	stream := r.stream(recipientId)
 	fmt.Println("publishing to: ", stream)
 	return r.rdb.XAdd(ctx, &redis.XAddArgs{
@@ -39,7 +49,7 @@ func (r *RedisDynamicMessageProducer) PublishTo(ctx context.Context, recipientId
 	}).Err()
 }
 
-func NewRedisDynamicMessageProducer(rdb *redis.Client, streamNameFunc func(stringuuid.StringUUID) string) *RedisDynamicMessageProducer {
+func NewRedisDynamicMessageProducer(rdb *redis.Client, streamNameFunc func(uuidstring.ID) string) *RedisDynamicMessageProducer {
 	return &RedisDynamicMessageProducer{
 		rdb:    rdb,
 		stream: streamNameFunc,
@@ -51,7 +61,11 @@ type RedisMessageProducer struct {
 	stream string
 }
 
-func (r *RedisMessageProducer) Publish(ctx context.Context, data json.RawMessage) error {
+func (r *RedisMessageProducer) Send(ctx context.Context, msg any) error {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
 	values := map[string]interface{}{
 		"payload": data,
 	}

@@ -7,9 +7,13 @@ import (
 	"syscall"
 
 	"github.com/bkohler93/game-backend/internal/app/gateway"
+	"github.com/bkohler93/game-backend/internal/app/gateway/client"
 	"github.com/bkohler93/game-backend/internal/shared/room"
+	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 func main() {
@@ -28,10 +32,20 @@ func main() {
 		panic(err)
 	}
 	roomRepository := room.NewRepository(roomStore)
-	matchmakingClientMsgConsumerFactory := gateway.NewRedisMatchmakingClientMessageConsumerFactory(redisClient)
-	matchmakingServerMsgProducer := gateway.NewRedisMatchmakingServerMessageProducer(redisClient)
 
-	g := gateway.NewGateway(port, roomRepository, matchmakingClientMsgConsumerFactory, matchmakingServerMsgProducer)
+	clientTransportBusFactory := client.NewClientTransportBusFactory(redisClient, func(clientId string) transport.MessageGroupConsumer {
+		stream := rediskeys.MatchmakingClientMessageStream(uuidstring.ID(clientId))
+		consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
+		consumer, err := transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, clientId)
+		if err != nil {
+			panic(err)
+		}
+		return consumer
+	}, func() transport.MessageProducer {
+		return transport.NewRedisMessageProducer(redisClient, rediskeys.MatchmakingServerMessageStream)
+	})
+
+	g := gateway.NewGateway(port, roomRepository, clientTransportBusFactory)
 
 	g.Start(ctx)
 }

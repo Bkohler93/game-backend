@@ -4,13 +4,13 @@ import (
 	"context"
 
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
-	"github.com/bkohler93/game-backend/pkg/stringuuid"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/redis/go-redis/v9"
 )
 
 type TrackerStore interface {
-	Set(ctx context.Context, playerId, roomId stringuuid.StringUUID) error
-	Get(ctx context.Context, playerId stringuuid.StringUUID) (stringuuid.StringUUID, error)
+	Set(ctx context.Context, playerId, roomId uuidstring.ID) error
+	Get(ctx context.Context, playerId uuidstring.ID) (uuidstring.ID, error)
 }
 
 type RedisTrackerStore struct {
@@ -23,18 +23,18 @@ func NewRedisPlayerTrackerStore(rdb *redis.Client) *RedisTrackerStore {
 	}
 }
 
-func playerKey(playerId stringuuid.StringUUID) string {
+func playerKey(playerId uuidstring.ID) string {
 	return rediskeys.PlayerString(playerId)
 }
 
-func (r *RedisTrackerStore) Set(ctx context.Context, playerId, roomId stringuuid.StringUUID) error {
+func (r *RedisTrackerStore) Set(ctx context.Context, playerId, roomId uuidstring.ID) error {
 	key := playerKey(playerId)
 	return r.rdb.Set(ctx, key, roomId, 0).Err()
 }
 
-func (r *RedisTrackerStore) Get(ctx context.Context, playerId stringuuid.StringUUID) (stringuuid.StringUUID, error) {
+func (r *RedisTrackerStore) Get(ctx context.Context, playerId uuidstring.ID) (uuidstring.ID, error) {
 	key := playerKey(playerId)
 	str, err := r.rdb.Get(ctx, key).Result()
-	id := stringuuid.StringUUID(str)
+	id := uuidstring.ID(str)
 	return id, err
 }
