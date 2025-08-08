@@ -15,11 +15,6 @@ func LoadEnv() {
 	}
 }
 
-func LoadLuaSrc(filePath string) (string, error) {
-	bytes, err := os.ReadFile(filePath)
-	return string(bytes), err
-}
-
 func SliceForeachContext[T any](ctx context.Context, items []T, do func(ctx context.Context, item T)) {
 	for _, i := range items {
 		select {

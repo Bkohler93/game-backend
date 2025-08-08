@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/app/game"
-	"github.com/bkohler93/game-backend/internal/shared/utils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/files"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
@@ -233,7 +233,7 @@ func TestCalculateThreshold(t *testing.T) {
 
 func TestLoadLuaSrc(t *testing.T) {
 	t.Run("load AddPlayerToRoom src", func(t *testing.T) {
-		_, err := utils.LoadLuaSrc(addPlayerToRoomFilePath)
+		_, err := files.GetLuaScript(files.LuaAddPlayerToRoom)
 		if err != nil {
 			t.Errorf("failed to load AddPlayerToRoom src - %v", err)
 		}

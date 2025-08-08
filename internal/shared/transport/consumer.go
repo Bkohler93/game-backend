@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/shared/message"
-	"github.com/bkohler93/game-backend/internal/shared/utils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/files"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -46,19 +46,17 @@ type RedisMessageGroupConsumer struct {
 }
 
 var (
-	luaScriptBasePath     = "../../../db/redis/scripts"
-	atomicAckDelFilePath  = fmt.Sprintf("%s/cgroup_xack_xdel_atomic.lua", luaScriptBasePath)
 	consumerBlockDuration = time.Second * 5
 )
 
 func NewRedisMessageGroupConsumer(ctx context.Context, rdb *redis.Client, stream, consumerGroup, consumer string) (*RedisMessageGroupConsumer, error) {
 	var r *RedisMessageGroupConsumer
 	luaScripts := make(map[string]*redis.Script)
-	atomicAckDelSrc, err := utils.LoadLuaSrc(atomicAckDelFilePath)
+	atomicAckDelSrc, err := files.GetLuaScript(files.LuaCGroupAckDelMsg)
 	if err != nil {
 		return r, fmt.Errorf("error loading atomicAckDel lua script - %v", err)
 	}
-	luaScripts[atomicAckDelFilePath] = redis.NewScript(atomicAckDelSrc)
+	luaScripts[files.LuaCGroupAckDelMsg] = redis.NewScript(atomicAckDelSrc)
 
 	r = &RedisMessageGroupConsumer{
 		rdb:           rdb,
@@ -118,5 +116,5 @@ func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan
 }
 
 func (mc *RedisMessageGroupConsumer) AckMessage(ctx context.Context, msgId string) error {
-	return mc.luaScripts[atomicAckDelFilePath].Run(ctx, mc.rdb, []string{mc.stream}, mc.consumerGroup, msgId).Err()
+	return mc.luaScripts[files.LuaCGroupAckDelMsg].Run(ctx, mc.rdb, []string{mc.stream}, mc.consumerGroup, msgId).Err()
 }

@@ -26,7 +26,7 @@ func UnwrapAndForward[T message.Message](ctx context.Context, wrappedMsgCh <-cha
 
 				msgCh <- msg
 			case err := <-errCh:
-				fmt.Printf("received error from ServerMessageConsumer - %v", err)
+				fmt.Println(err)
 			case <-ctx.Done():
 				return
 			}

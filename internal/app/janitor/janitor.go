@@ -9,27 +9,14 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
 )
 
-var (
-	luaScriptBasePath                = "../../db/redis/scripts"
-	staleMatchmakingToPendingLuaPath = fmt.Sprintf("%s/stale_matchmaking_to_pending.lua", luaScriptBasePath)
-)
-
 type Janitor struct {
 	matchmakingCoordinator *taskcoordinator.MatchmakingTaskCoordinator
-	//rdb     *redis.Client
-	//scripts map[string]*redis.Script
 }
 
 func New(matchmakingCoordinator *taskcoordinator.MatchmakingTaskCoordinator) *Janitor {
-	//addPlayerToRoomSrc, err := loadLuaSrc(staleMatchmakingToPendingLuaPath)
 	j := &Janitor{
 		matchmakingCoordinator: matchmakingCoordinator,
 	}
-	//if err != nil {
-	//	fmt.Printf("failed to load lua src from '%s' with error - %v", staleMatchmakingToPendingLuaPath, err)
-	//	return j
-	//}
-	//j.scripts[staleMatchmakingToPendingLuaPath] = redis.NewScript(addPlayerToRoomSrc)
 	return j
 }
 

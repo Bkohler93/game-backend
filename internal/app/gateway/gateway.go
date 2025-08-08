@@ -2,9 +2,11 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/bkohler93/game-backend/internal/app/gateway/client"
 	"github.com/bkohler93/game-backend/internal/shared/room"
@@ -29,7 +31,8 @@ func NewGateway(addr string, rr *room.Repository, clientTransportBusFactory *cli
 }
 
 func (g *Gateway) Start(ctx context.Context) {
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		eg, ctx := errgroup.WithContext(ctx)
 
 		c, err := client.NewClient(ctx, w, r, g.clientTransportBusFactory)
@@ -70,9 +73,25 @@ func (g *Gateway) Start(ctx context.Context) {
 		g.hub.UnregisterCh <- c
 	})
 
-	fmt.Printf("listening on %s for new matchmaking requests from clients\n", g.addr)
-	err := http.ListenAndServe("0.0.0.0:"+g.addr, nil)
-	if err != nil {
-		log.Fatalf("error creating server - %v", err)
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%s", g.addr),
+		Handler: mux,
 	}
+
+	go func() {
+		log.Println("Starting server on :" + g.addr)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("ListenAndServe error: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("Server shutdown failed: %v", err)
+	}
+	log.Println("Server gracefully stopped")
 }

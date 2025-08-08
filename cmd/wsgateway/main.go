@@ -19,7 +19,7 @@ import (
 func main() {
 	utils.LoadEnv()
 	port := os.Getenv("PORT")
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
 	redisClient, err := redisutils.NewRedisClient(ctx)

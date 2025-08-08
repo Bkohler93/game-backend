@@ -14,7 +14,7 @@ import (
 
 func main() {
 	utils.LoadEnv()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	redisClient, err := redisutils.NewRedisClient(ctx)
 	if err != nil {

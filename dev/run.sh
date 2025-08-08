@@ -16,6 +16,7 @@ run_service() {
 cleanup() {
   echo "" 
   echo "--- Cleanup ---"
+  
   echo "Stopping container $CONTAINER_NAME..."
   if docker ps -a --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}$"; then
     docker stop "$CONTAINER_NAME" || true 

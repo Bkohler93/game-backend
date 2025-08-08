@@ -8,7 +8,7 @@ import (
 )
 
 func SliceFromRedisDocs[T any](docs []redis.Document) ([]T, error) {
-	items := []T{}
+	var items []T
 	for _, doc := range docs {
 		var item T
 		jsonData := doc.Fields["$"]

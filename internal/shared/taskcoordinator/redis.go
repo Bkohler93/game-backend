@@ -6,16 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bkohler93/game-backend/internal/shared/utils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/files"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/redis/go-redis/v9"
-)
-
-var (
-	luaScriptBasePath                   = "../../../db/redis/scripts"
-	staleMatchmakingToPendingLuaPath    = fmt.Sprintf("%s/stale_matchmaking_to_pending.lua", luaScriptBasePath)
-	claimPendingMoveToInProgressLuaPath = fmt.Sprintf("%s/claim_pending_move_to_inprogress.lua", luaScriptBasePath)
 )
 
 const (
@@ -33,17 +27,18 @@ func NewRedisMatchmakingTaskStore(rdb *redis.Client) (*RedisMatchmakingTaskStore
 		rdb: rdb,
 		lua: make(map[string]*redis.Script),
 	}
-	staleMatchmakingToPendingSrc, err := utils.LoadLuaSrc(staleMatchmakingToPendingLuaPath)
+	staleMatchmakingToPendingSrc, err := files.GetLuaScript(files.LuaStaleMatchmakingToPending)
+
 	if err != nil {
-		return r, fmt.Errorf("failed to load lua src from '%s' with error - %v", staleMatchmakingToPendingLuaPath, err)
+		return r, fmt.Errorf("failed to load lua src from '%s' with error - %v", files.LuaStaleMatchmakingToPending, err)
 	}
-	claimPendingMoveToInProgressSrc, err := utils.LoadLuaSrc(claimPendingMoveToInProgressLuaPath)
+	claimPendingMoveToInProgressSrc, err := files.GetLuaScript(files.LuaClaimPendingMoveToInProgress)
 	if err != nil {
-		return r, fmt.Errorf("failed to load lua src from '%s' with error - %v", claimPendingMoveToInProgressLuaPath, err)
+		return r, fmt.Errorf("failed to load lua src from '%s' with error - %v", files.LuaClaimPendingMoveToInProgress, err)
 	}
 
-	r.lua[claimPendingMoveToInProgressLuaPath] = redis.NewScript(claimPendingMoveToInProgressSrc)
-	r.lua[staleMatchmakingToPendingLuaPath] = redis.NewScript(staleMatchmakingToPendingSrc)
+	r.lua[files.LuaClaimPendingMoveToInProgress] = redis.NewScript(claimPendingMoveToInProgressSrc)
+	r.lua[files.LuaStaleMatchmakingToPending] = redis.NewScript(staleMatchmakingToPendingSrc)
 	return r, nil
 }
 
@@ -88,7 +83,7 @@ func (r *RedisMatchmakingTaskStore) GetStaleInProgressTasks(ctx context.Context,
 
 func (r *RedisMatchmakingTaskStore) MoveInProgressToPendingTask(ctx context.Context, roomID uuidstring.ID) error {
 	t := time.Now().Unix()
-	err := r.lua[staleMatchmakingToPendingLuaPath].Run(
+	err := r.lua[files.LuaStaleMatchmakingToPending].Run(
 		ctx,
 		r.rdb,
 		[]string{rediskeys.MatchmakeTaskInProgressSortedSetKey, rediskeys.MatchmakeTaskPendingSortedSetKey},
@@ -106,7 +101,7 @@ func (r *RedisMatchmakingTaskStore) MoveInProgressToPendingTask(ctx context.Cont
 func (r *RedisMatchmakingTaskStore) ClaimPendingTask(ctx context.Context) (uuidstring.ID, error) {
 	now := time.Now().Unix()
 
-	res, err := r.lua[claimPendingMoveToInProgressLuaPath].Run(
+	res, err := r.lua[files.LuaClaimPendingMoveToInProgress].Run(
 		ctx,
 		r.rdb,
 		[]string{

@@ -5,19 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 
-	"github.com/bkohler93/game-backend/internal/shared/utils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/files"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/redis/go-redis/v9"
-)
-
-var (
-	luaScriptBasePath       = "../../../db/redis/scripts"
-	addPlayerToRoomFilePath = fmt.Sprintf("%s/add_player_to_room.lua", luaScriptBasePath)
 )
 
 type Store interface {
@@ -36,14 +30,12 @@ type RedisStore struct {
 func NewRedisRoomStore(rdb *redis.Client) (*RedisStore, error) {
 
 	luaScripts := make(map[string]*redis.Script)
-	dir, _ := os.Getwd()
 
-	fmt.Println("current directory =", dir)
-	addPlayerToRoomSrc, err := utils.LoadLuaSrc(addPlayerToRoomFilePath)
+	addPlayerToRoomSrc, err := files.GetLuaScript(files.LuaAddPlayerToRoom)
 	if err != nil {
-		return &RedisStore{}, fmt.Errorf("failed to load lua src from '%s' with error - %v", addPlayerToRoomFilePath, err)
+		return &RedisStore{}, fmt.Errorf("failed to load lua src from '%s' with error - %v", files.LuaAddPlayerToRoom, err)
 	}
-	luaScripts[addPlayerToRoomFilePath] = redis.NewScript(addPlayerToRoomSrc)
+	luaScripts[files.LuaAddPlayerToRoom] = redis.NewScript(addPlayerToRoomSrc)
 
 	return &RedisStore{
 		rdb: rdb,
@@ -68,7 +60,7 @@ func (store *RedisStore) GetRoom(ctx context.Context, roomId uuidstring.ID) (Roo
 func (store *RedisStore) JoinRoom(ctx context.Context, roomId uuidstring.ID, userId uuidstring.ID, userSkill int) (Room, error) {
 	var room Room
 	key := rediskeys.RoomsJSONObject(roomId)
-	result, err := store.lua[addPlayerToRoomFilePath].Run(ctx, store.rdb, []string{key}, userId.String(), userSkill, 2).Result() //TODO the '2' magic value should be a constant depending on the game that is being matchmaked more
+	result, err := store.lua[files.LuaAddPlayerToRoom].Run(ctx, store.rdb, []string{key}, userId.String(), userSkill, 2).Result() //TODO the '2' magic value should be a constant depending on the game that is being matchmaked more
 	if err != nil {
 		return room, err
 	}
