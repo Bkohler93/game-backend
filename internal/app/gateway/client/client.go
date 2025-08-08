@@ -3,7 +3,9 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -12,6 +14,10 @@ import (
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/gorilla/websocket"
 	"golang.org/x/sync/errgroup"
+)
+
+var (
+	ErrClientClosedConnection = errors.New("client disconnected")
 )
 
 type Client struct {
@@ -46,6 +52,9 @@ func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, tran
 	id := uuidstring.NewID() //TODO this should be stored by the client, or retrieved from a database
 	transportBus := transportBusFactory.NewClientTransportBus(id)
 
+	//TODO this is temporary until we figure out where the id comes from
+	conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("id=%s", id)))
+
 	c = &Client{
 		Conn:             conn,
 		MatchmakingMsgCh: make(chan transport.WrappedConsumeMsg),
@@ -65,9 +74,11 @@ func (c *Client) PingLoop(ctx context.Context) error {
 		case <-t.C:
 			err := c.Conn.WriteMessage(websocket.PingMessage, []byte("PING"))
 			if err != nil {
+				if errors.Is(err, websocket.ErrCloseSent) {
+					return ErrClientClosedConnection
+				}
 				return fmt.Errorf("ws{%s} failed to send PING - %v", c.ID.String(), err)
 			}
-			fmt.Printf("ws{%s} sent PING\n", c.ID.String())
 		case <-ctx.Done():
 			t.Stop()
 			return nil
@@ -87,10 +98,11 @@ func (c *Client) WritePump(ctx context.Context) error {
 			messageId := matchmakingMsg.ID
 			outMsg = matchmakingMsg.Payload.([]byte)
 			ackFunc = func() error {
-				return c.TransportBus.AckMatchmakingMsg(ctx, messageId)
+
+				err := c.TransportBus.AckMatchmakingMsg(ctx, messageId)
+				return err
 			}
 		case gameMsg := <-c.GameMsgCh:
-			//messageId := gameMsg.ID
 			outMsg = gameMsg.Payload.([]byte)
 			ackFunc = func() error {
 				//TODO return c.TransportBus.AckGameMsg(ctx, messageId)
@@ -103,7 +115,7 @@ func (c *Client) WritePump(ctx context.Context) error {
 		}
 		err = ackFunc()
 		if err != nil {
-			fmt.Printf("failed to successfully call ACK for outgoing message")
+			log.Println("failed to successfully call ACK for outgoing message")
 		}
 	}
 }
@@ -138,13 +150,12 @@ func (c *Client) ReadPump(ctx context.Context) error {
 
 		case err := <-errChan:
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-				fmt.Printf("client %s: websocket connection closed by the client - %v\n", c.ID, err)
-				return nil
+				return ErrClientClosedConnection
 			}
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				fmt.Printf("client %s: websocket unexpectedly closed - %v\n", c.ID, err)
+				log.Printf("client[%s]: websocket unexpectedly closed - %v\n", c.ID, err)
 			} else {
-				fmt.Printf("client %s: websocket encountered an error: %v\n", c.ID, err)
+				log.Printf("client[%s]: websocket encountered an error: %v\n", c.ID, err)
 			}
 			return err
 
@@ -155,11 +166,11 @@ func (c *Client) ReadPump(ctx context.Context) error {
 			var envelope message.Envelope
 			err := json.Unmarshal(bytes, &envelope)
 			if err != nil {
-				fmt.Printf("client %s: failed to unmarshal message: %v\n", c.ID, err)
+				log.Printf("client %s: failed to unmarshal message: %v\n", c.ID, err)
 				continue
 			}
 			if err = c.RouteMessage(envelope, ctx); err != nil {
-				fmt.Printf("routing message failed - %v\n", err)
+				log.Printf("routing message failed - %v\n", err)
 			}
 		}
 	}
@@ -173,7 +184,7 @@ func (c *Client) RouteMessage(msg message.Envelope, ctx context.Context) error {
 	case string(message.GameService):
 		//TODO err = c.m.Send(ctx, rediskeys.GameServerMessageStream, msg.Payload)
 	default:
-		fmt.Println("unexpected gateway.ServiceType", msg.Type)
+		log.Println("unexpected gateway.ServiceType", msg.Type)
 	}
 	return nil
 }

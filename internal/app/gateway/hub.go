@@ -1,7 +1,9 @@
 package gateway
 
 import (
-	"fmt"
+	"errors"
+	"log"
+	"net"
 
 	"github.com/bkohler93/game-backend/internal/app/gateway/client"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
@@ -26,12 +28,16 @@ func NewHub() *Hub {
 			select {
 			case c := <-h.RegisterCh:
 				h.Clients[c.ID] = c
+				log.Printf("registered client[%s]\n", c.ID)
 			case c := <-h.UnregisterCh:
 				err := c.Conn.Close()
 				if err != nil {
-					fmt.Printf("error closing client's(%s) websocket conn - %v", c.ID.String(), err)
+					if !errors.Is(err, net.ErrClosed) {
+						log.Printf("error closing client's(%s) websocket conn - %v", c.ID.String(), err)
+					}
 				}
 				delete(h.Clients, c.ID)
+				log.Printf("unregistered client[%s]\n", c.ID)
 			}
 		}
 	}()

@@ -3,12 +3,14 @@ package matchmake
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
+	"log"
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/shared/players"
 	"github.com/bkohler93/game-backend/internal/shared/room"
 	"github.com/bkohler93/game-backend/internal/shared/taskcoordinator"
+	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"golang.org/x/sync/errgroup"
 )
@@ -27,6 +29,11 @@ const (
 )
 
 func (m *Matchmaker) Start(ctx context.Context) {
+	err := m.RoomRepository.CreateRoomIndex(ctx)
+	if err != nil {
+		log.Printf("failed to create room index. Shutting down - %v\n", err)
+		return
+	}
 	var eg errgroup.Group
 	eg.Go(func() error {
 		return m.ProcessMatchmakingMessages(ctx)
@@ -38,8 +45,11 @@ func (m *Matchmaker) Start(ctx context.Context) {
 		})
 	}
 
+	log.Println("ready to process matchmaking requests")
 	if err := eg.Wait(); err != nil {
-		fmt.Printf("Matchmaker cancelling due to error - %v", err)
+		log.Printf("shutting down due to error - %v\n", err)
+	} else {
+		log.Println("shutting down gracefully")
 	}
 }
 
@@ -51,10 +61,8 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req *Request
 	}
 	openRooms, err := m.RoomRepository.QueryOpenRooms(ctx, queryRoomReq)
 	if err != nil {
-		fmt.Printf("failed to retrieve open rooms - %v", err)
 		return err
 	}
-
 	roomFound := false
 	for _, openRoom := range openRooms {
 		joinRoomRequest := room.JoinRoomRequest{
@@ -66,7 +74,7 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req *Request
 			if err.Error() == "ROOM_FULL" {
 				continue
 			}
-			fmt.Printf("failed to attempt to join the open room - %v\n", err)
+			log.Printf("failed to attempt to join the open room - %v\n", err)
 			continue
 		}
 		roomFound = true
@@ -75,21 +83,21 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req *Request
 				msg := NewRoomChangedMessage(rm.RoomId, rm.PlayerCount, rm.AverageSkill)
 				bytes, err := json.Marshal(msg)
 				if err != nil {
-					fmt.Printf("failed to marshal object into json -%v\n", err)
+					log.Printf("failed to marshal object into json -%v\n", err)
 				}
 				err = m.TransportBus.SendToClient(ctx, playerId, msg)
 				if err != nil {
-					fmt.Printf("error sending %v to client\n", bytes)
+					log.Printf("error sending %v to client\n", bytes)
 				}
 				err = m.PlayerRepository.SetPlayerActive(ctx, playerId, rm.RoomId)
 				if err != nil {
-					fmt.Printf("error storing player in active player list - %v\n", err)
+					log.Printf("error storing player in active player list - %v\n", err)
 				}
 			} else {
 				msg := NewPlayerJoinedRoomMessage(req.UserId)
-				err = m.TransportBus.SendToClient(ctx, req.UserId, msg)
+				err = m.TransportBus.SendToClient(ctx, playerId, msg)
 				if err != nil {
-					fmt.Printf("error publishing %v to client\n", msg)
+					log.Printf("error publishing %v to client\n", msg)
 				}
 			}
 		}
@@ -109,18 +117,17 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req *Request
 		}
 		err = m.RoomRepository.CreateRoom(ctx, rm)
 		if err != nil {
-			fmt.Printf("error creating new room - %v\n", err)
+			log.Printf("error creating new room - %v\n", err)
 		}
 		msg := NewRoomChangedMessage(rm.RoomId, rm.PlayerCount, rm.AverageSkill)
 
 		err = m.TransportBus.SendToClient(ctx, req.UserId, msg)
 		if err != nil {
-			fmt.Printf("error publishing - %v", err)
 			return err
 		}
 		err = m.PlayerRepository.SetPlayerActive(ctx, req.UserId, rm.RoomId)
 		if err != nil {
-			fmt.Printf("error storing player in active player list - %v\n", err)
+			log.Printf("error storing player in active player list - %v\n", err)
 		}
 		//TODO Add to sorted set "matchmake_tasks" with a calculated matchmake time as the score (sometime in the future)
 		//TODO and the room ID as the member
@@ -161,21 +168,26 @@ func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 					return nil
 				}
 				var err error
-
 				switch msg := matchmakingMsg.(type) {
 				case *ExitMatchmakingMessage:
 					//TODO err = m.processExitMatchmakingRequest(gCtx, msg)
 					err = nil
 				case *RequestMatchmakingMessage:
 					err = m.processMatchmakingRequest(gCtx, msg)
+					if err != nil {
+						return err
+					}
 				}
 				//TODO handle breaking errors that should cancel anymore message processing (any failures to interact with redis db.
 				//TODO 	otherwise should just continue reading from the server message stream
 				if err == nil {
 					err = m.TransportBus.AckServerMessage(gCtx, matchmakingMsg.GetID())
+					if errors.Is(err, transport.ErrScriptNotFound) {
+						return err
+					}
 				}
 				if err != nil {
-					fmt.Printf("received an error - %v", err)
+					log.Printf("received an error - %v", err)
 				}
 			}
 		}

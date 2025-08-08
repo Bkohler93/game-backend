@@ -2,8 +2,6 @@ package transport
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/redis/go-redis/v9"
@@ -11,13 +9,13 @@ import (
 
 type MessageProducerType string
 type MessageProducer interface {
-	Send(ctx context.Context, msg any) error
+	Send(ctx context.Context, data []byte) error
 }
 type MessageProducerBuilderFunc = func() MessageProducer
 
 type DynamicMessageProducerType string
 type DynamicMessageProducer interface {
-	SendTo(ctx context.Context, recipientId uuidstring.ID, msg any) error
+	SendTo(ctx context.Context, recipientId uuidstring.ID, data []byte) error
 }
 
 type BroadcastProducerType string
@@ -30,18 +28,11 @@ type RedisDynamicMessageProducer struct {
 	stream func(uuidstring.ID) string
 }
 
-func (r *RedisDynamicMessageProducer) SendTo(ctx context.Context, recipientId uuidstring.ID, msg any) error {
-	fmt.Println("object to marshal: ", msg)
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
+func (r *RedisDynamicMessageProducer) SendTo(ctx context.Context, recipientId uuidstring.ID, data []byte) error {
 	values := map[string]interface{}{
 		"payload": data,
 	}
-	fmt.Println("values", values)
 	stream := r.stream(recipientId)
-	fmt.Println("publishing to: ", stream)
 	return r.rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: stream,
 		ID:     "*",
@@ -61,11 +52,11 @@ type RedisMessageProducer struct {
 	stream string
 }
 
-func (r *RedisMessageProducer) Send(ctx context.Context, msg any) error {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
+func (r *RedisMessageProducer) Send(ctx context.Context, data []byte) error {
+	//data, err := json.Marshal(msg)
+	//if err != nil {
+	//	return err
+	//}
 	values := map[string]interface{}{
 		"payload": data,
 	}

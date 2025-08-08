@@ -37,13 +37,13 @@ func (g *Gateway) Start(ctx context.Context) {
 
 		c, err := client.NewClient(ctx, w, r, g.clientTransportBusFactory)
 		if err != nil {
-			fmt.Printf("failed to initialize client websocket - %v\n", err)
+			log.Printf("failed to initialize client websocket - %v\n", err)
 			return
 		}
 		defer func(conn *websocket.Conn) {
 			err := conn.Close()
 			if err != nil {
-				fmt.Printf("failed to close connection - %v\n", err)
+				log.Printf("failed to close connection - %v\n", err)
 			}
 		}(c.Conn)
 
@@ -65,9 +65,10 @@ func (g *Gateway) Start(ctx context.Context) {
 		})
 
 		if err = eg.Wait(); err != nil {
-			fmt.Printf("worker encountered an error - %v", err)
-		} else {
-			fmt.Println("workers ended with no errors")
+			if errors.Is(err, client.ErrClientClosedConnection) {
+			} else {
+				log.Println("worker ended due to unknown error -", err)
+			}
 		}
 
 		g.hub.UnregisterCh <- c

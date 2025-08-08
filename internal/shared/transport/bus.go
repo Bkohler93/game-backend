@@ -60,8 +60,8 @@ func (m *Bus) Send(ctx context.Context, t MessageProducerType, data []byte) erro
 	return m.messageProducers[t].Send(ctx, data)
 }
 
-func (m *Bus) SendTo(ctx context.Context, producerType DynamicMessageProducerType, recipient uuidstring.ID, msg any) error {
-	return m.dynamicMessageProducers[producerType].SendTo(ctx, recipient, msg)
+func (m *Bus) SendTo(ctx context.Context, producerType DynamicMessageProducerType, recipient uuidstring.ID, data []byte) error {
+	return m.dynamicMessageProducers[producerType].SendTo(ctx, recipient, data)
 }
 
 func (m *Bus) Publish(ctx context.Context, producerType BroadcastProducerType, data []byte) error {

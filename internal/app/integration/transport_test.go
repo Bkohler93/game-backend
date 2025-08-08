@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"slices"
@@ -82,8 +83,12 @@ func TestRedisMatchmakingClientMessageConsumerAndProducer(t *testing.T) {
 			userIds = append(userIds, newId)
 
 			payload := matchmake.NewPlayerJoinedRoomMessage(newId)
+			bytes, err := json.Marshal(payload)
+			if err != nil {
+				t.Errorf("error marshalling message - %v", err)
+			}
 
-			err := producer.SendTo(ctx, userId, payload)
+			err = producer.SendTo(ctx, userId, bytes)
 			if err != nil {
 				t.Errorf("unexpected error trying to publish msg - %v", err)
 			}
@@ -174,7 +179,12 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 
 			payload := originalMsg
 
-			err := producer.Send(ctx, payload)
+			bytes, err := json.Marshal(payload)
+			if err != nil {
+				t.Errorf("error trying to marshal payload - %v", err)
+			}
+
+			err = producer.Send(ctx, bytes)
 			if err != nil {
 				t.Errorf("unexpected error trying to publish msg - %v", err)
 			}

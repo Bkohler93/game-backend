@@ -44,9 +44,6 @@ func (f *ClientTransportBusFactory) NewClientTransportBus(clientId uuidstring.ID
 	return b
 }
 
-func (b *ClientTransportBus) DoSomething() {
-}
-
 func (b *ClientTransportBus) StartReceivingMatchmakingClientMessages(ctx context.Context) (<-chan transport.WrappedConsumeMsg, <-chan error) {
 	return b.transportBus.StartReceiving(ctx, ClientMessageConsumer)
 }

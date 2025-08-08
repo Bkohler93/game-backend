@@ -2,6 +2,7 @@ package matchmake
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
@@ -20,7 +21,11 @@ type TransportBus struct {
 }
 
 func (b *TransportBus) SendToClient(ctx context.Context, id uuidstring.ID, msg MatchmakingClientMessage) error {
-	return b.transportBus.SendTo(ctx, ClientMessageProducer, id, msg)
+	bytes, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return b.transportBus.SendTo(ctx, ClientMessageProducer, id, bytes)
 }
 
 func (b *TransportBus) StartReceivingServerMessages(ctx context.Context) (<-chan MatchmakingServerMessage, <-chan error) {

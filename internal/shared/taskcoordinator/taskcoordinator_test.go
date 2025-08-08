@@ -1,7 +1,6 @@
 package taskcoordinator
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -185,7 +184,6 @@ func TestRedisMatchmakingStore_InProgressTasks(t *testing.T) {
 		for i := 0; i < 10; i++ {
 			roomID := uuidstring.NewID()
 			tm := now.Add(time.Second * time.Duration(i) * -1)
-			fmt.Println("adding time", tm)
 			err := store.AddInProgressTask(ctx, roomID, tm.Unix())
 			if err != nil {
 				t.Errorf("did not expect error adding id=%s score=%d - %v", roomID, tm.Unix(), err)

@@ -141,7 +141,7 @@ func (store *RedisStore) QueryOpenRooms(ctx context.Context, region string, minA
 		fmt.Sprintf("@average_skill:[%d %d] @region:%s @player_count:[0,%d]", minAvgSkill, maxAvgSkill, region, maxPlayerCount),
 	).Result()
 	if err != nil {
-		return rooms, fmt.Errorf("error retrieving open rooms from redis - %v", err)
+		return rooms, err
 	}
 
 	rooms, err = redisutils.SliceFromRedisDocs[Room](findMatchResult.Docs)

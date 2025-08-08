@@ -45,12 +45,9 @@ func UnmarshalWrappedType[T Discriminable](data []byte, typeRegistry map[string]
 	var temp struct {
 		TypeDiscriminator string `json:"$type"`
 	}
-	fmt.Println("temp struct", temp)
 	if err := json.Unmarshal(data, &temp); err != nil {
-		fmt.Println("returning error", err)
 		return zeroValue, err
 	}
-	fmt.Println("temp struct type discriminator", temp.TypeDiscriminator)
 
 	if constructor, ok := typeRegistry[temp.TypeDiscriminator]; ok {
 		concreteMessage := constructor()

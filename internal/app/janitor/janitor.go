@@ -2,7 +2,7 @@ package janitor
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/shared/taskcoordinator"
@@ -106,6 +106,6 @@ func (j *Janitor) CleanupMatchmakeTasksInProgress(ctx context.Context) {
 	maxTime := time.Now().Add(allowableIdleTime * -1).Unix()
 	_, err := j.matchmakingCoordinator.ReclaimStaleInProgressTasks(ctx, maxTime)
 	if err != nil {
-		fmt.Printf("failed to reclaim old inprogress tasks with err - %v\n", err)
+		log.Printf("failed to reclaim old inprogress tasks with err - %v\n", err)
 	}
 }

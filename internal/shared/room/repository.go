@@ -21,6 +21,10 @@ func (r *Repository) CreateRoom(ctx context.Context, room Room) error {
 	return r.store.InsertRoom(ctx, room)
 }
 
+func (r *Repository) CreateRoomIndex(ctx context.Context) error {
+	return r.store.CreateRoomIndex(ctx)
+}
+
 func NewRepository(store Store) *Repository {
 	return &Repository{
 		store: store,

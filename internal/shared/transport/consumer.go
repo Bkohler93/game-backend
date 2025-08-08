@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/shared/message"
@@ -15,6 +16,10 @@ type WrappedConsumeMsg struct {
 	ID      string
 	Payload any
 }
+
+var (
+	ErrScriptNotFound = errors.New("script not found")
+)
 
 type MessageGroupConsumerType string
 type MessageGroupConsumer interface {
@@ -63,6 +68,7 @@ func NewRedisMessageGroupConsumer(ctx context.Context, rdb *redis.Client, stream
 		stream:        stream,
 		consumerGroup: consumerGroup,
 		consumer:      consumer,
+		luaScripts:    luaScripts,
 	}
 	_, err = r.rdb.XGroupCreateMkStream(ctx, stream, consumerGroup, "$").Result()
 	return r, err
@@ -71,7 +77,6 @@ func NewRedisMessageGroupConsumer(ctx context.Context, rdb *redis.Client, stream
 func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan WrappedConsumeMsg, <-chan error) {
 	msgCh := make(chan WrappedConsumeMsg)
 	errCh := make(chan error, 1)
-
 	go func() {
 		defer close(msgCh)
 		defer close(errCh)
@@ -80,13 +85,12 @@ func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan
 			case <-ctx.Done():
 				return
 			default:
-				fmt.Println("listening for messages on stream ---- ", mc.stream)
 				streamResults, err := mc.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 					Group:    mc.consumerGroup,
 					Consumer: mc.consumer,
 					Streams:  []string{mc.stream, ">"},
 					Count:    1,
-					Block:    consumerBlockDuration,
+					Block:    0,
 				}).Result()
 				if err != nil {
 					if errors.Is(err, context.Canceled) {
@@ -95,14 +99,11 @@ func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan
 					errCh <- fmt.Errorf("error reading from MatchmakingClientMessage stream - %v", err)
 					return
 				}
-				fmt.Println("Received values", streamResults[0].Messages[0].Values)
 				data, ok := streamResults[0].Messages[0].Values["payload"].(string)
-				fmt.Println("received data", data)
 				if !ok {
-					fmt.Printf("MatchmakingClientMessageConsumer has error trying to structure the stream reply - %v", err)
+					log.Printf("error trying to structure the stream reply - %v", err)
 				}
 				bytes := []byte(data)
-				fmt.Println("bytes", bytes)
 				id := streamResults[0].Messages[0].ID
 
 				msgCh <- WrappedConsumeMsg{
@@ -116,5 +117,8 @@ func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan
 }
 
 func (mc *RedisMessageGroupConsumer) AckMessage(ctx context.Context, msgId string) error {
+	if _, ok := mc.luaScripts[files.LuaCGroupAckDelMsg]; !ok {
+		return ErrScriptNotFound
+	}
 	return mc.luaScripts[files.LuaCGroupAckDelMsg].Run(ctx, mc.rdb, []string{mc.stream}, mc.consumerGroup, msgId).Err()
 }
