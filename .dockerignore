@@ -1,0 +1,8 @@
+infrastructure/
+dev/
+build/
+bin/
+
+*.md
+LICENSE
+

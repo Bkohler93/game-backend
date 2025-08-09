@@ -22,7 +22,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	redisClient, err := redisutils.NewRedisClient(ctx)
+	redisClient, err := redisutils.NewRedisMatchmakeClient(ctx)
 	if err != nil {
 		panic(err)
 	}

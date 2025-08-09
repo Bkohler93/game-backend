@@ -26,7 +26,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 		}
 	})
 	t.Run("create new redis room Store", func(t *testing.T) {
-		client, err := redisutils.NewRedisClient(outerCtx)
+		client, err := redisutils.NewRedisMatchmakeClient(outerCtx)
 		if err != nil {
 			t.Errorf("trouble creating redis client - %v", err)
 		}

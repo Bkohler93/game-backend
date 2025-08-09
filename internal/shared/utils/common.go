@@ -8,7 +8,7 @@ import (
 )
 
 func LoadEnv() {
-	if os.Getenv("ENV") != "PROD" {
+	if os.Getenv("ENV") != "PROD" && os.Getenv("ENV") != "DEV" {
 		if err := godotenv.Load(); err != nil {
 			panic(err)
 		}

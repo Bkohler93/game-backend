@@ -32,6 +32,14 @@ func NewGateway(addr string, rr *room.Repository, clientTransportBusFactory *cli
 
 func (g *Gateway) Start(ctx context.Context) {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		log.Println("health check received at \"\\\"")
+		_, err := fmt.Fprintln(w, "OK")
+		if err != nil {
+			log.Println(err)
+		}
+	})
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		eg, ctx := errgroup.WithContext(ctx)
 

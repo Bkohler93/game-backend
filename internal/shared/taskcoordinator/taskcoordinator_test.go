@@ -12,7 +12,7 @@ func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
 	ctx := t.Context()
 
 	startup := func(t *testing.T) (store *RedisMatchmakingTaskStore, flush func()) {
-		c, err := redisutils.NewRedisClient(ctx)
+		c, err := redisutils.NewRedisMatchmakeClient(ctx)
 		if err != nil {
 			panic(err)
 		}
@@ -126,7 +126,7 @@ func TestRedisMatchmakingStore_InProgressTasks(t *testing.T) {
 	ctx := t.Context()
 
 	startup := func(t *testing.T) (store *RedisMatchmakingTaskStore, flush func()) {
-		c, err := redisutils.NewRedisClient(ctx)
+		c, err := redisutils.NewRedisMatchmakeClient(ctx)
 		if err != nil {
 			panic(err)
 		}

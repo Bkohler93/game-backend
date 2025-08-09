@@ -22,7 +22,7 @@ import (
 func TestRedisMatchmakingClientMessageConsumerFactory(t *testing.T) {
 	ctx := t.Context()
 
-	rdb, err := redisutils.NewRedisClient(ctx)
+	rdb, err := redisutils.NewRedisMatchmakeClient(ctx)
 	if err != nil {
 		t.Errorf("unexepcted error when creating redis client - %v", err)
 	}
@@ -51,7 +51,7 @@ func TestRedisMatchmakingClientMessageConsumerAndProducer(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var userId uuidstring.ID
 	startup := func(t *testing.T) (consumer transport.MessageGroupConsumer, producer transport.DynamicMessageProducer, flush func()) {
-		client, err := redisutils.NewRedisClient(ctx)
+		client, err := redisutils.NewRedisMatchmakeClient(ctx)
 		if err != nil {
 			panic(err)
 		}
@@ -144,7 +144,7 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var serverId uuidstring.ID
 	startup := func(t *testing.T) (consumer transport.MessageGroupConsumer, producer transport.MessageProducer, flush func()) {
-		client, err := redisutils.NewRedisClient(ctx)
+		client, err := redisutils.NewRedisMatchmakeClient(ctx)
 		if err != nil {
 			panic(err)
 		}

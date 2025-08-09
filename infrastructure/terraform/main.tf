@@ -18,11 +18,43 @@ resource "aws_instance" "app_server" {
   instance_type = "t2.micro"
   
   subnet_id = aws_subnet.public_1.id # Or aws_subnet.public_2.id, depending on your preference
-  vpc_security_group_ids = [aws_security_group.app.id]
+  vpc_security_group_ids = [aws_security_group.app.id,aws_security_group.allow_ssh.id]
+  key_name      = aws_key_pair.ec2_instance.key_name
+
+  iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
 
   tags = {
     Name = "game-backend"
   }
+}
+
+resource "aws_iam_role" "ec2_role" {
+  name = "ec2-ecr-access-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+# 2. Attach policy to allow ECR access and basic EC2 permissions
+resource "aws_iam_role_policy_attachment" "ecr_access" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+# Optional: Attach other policies if needed, e.g. S3 access, CloudWatch logs, etc.
+
+# 3. Create Instance Profile (required for EC2 to use the role)
+resource "aws_iam_instance_profile" "ec2_instance_profile" {
+  name = "ec2-instance-profile"
+  role = aws_iam_role.ec2_role.name
 }
 
 resource "aws_vpc" "main" {
@@ -32,6 +64,32 @@ resource "aws_vpc" "main" {
     Name = "main-vpc"
   }
 }
+
+resource "aws_security_group" "allow_ssh" {
+  name        = "allow_ssh"
+  description = "Allow SSH from my IP"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description      = "SSH from my IP"
+    from_port        = 22
+    to_port          = 22
+    protocol         = "tcp"
+    cidr_blocks      = ["67.237.164.19/32"] # Replace with your public IP or use "0.0.0.0/0" for open access (not recommended)
+  }
+
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "allow_ssh"
+  }
+}
+
 
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
@@ -133,8 +191,8 @@ resource "aws_security_group" "app" {
   vpc_id = aws_vpc.main.id
 
   ingress {
-    from_port       = 8083 
-    to_port         = 8083
+    from_port       = 8089
+    to_port         = 8089
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]  # Allow ALB traffic
   }
@@ -154,7 +212,7 @@ resource "aws_security_group" "app" {
 
 resource "aws_lb_target_group" "web" {
   name     = "web-target-group"
-  port     = 8083
+  port     = 8089
   protocol = "HTTP"
   vpc_id   = aws_vpc.main.id
 
@@ -243,5 +301,21 @@ resource "aws_route53_record" "app" {
     zone_id                = aws_lb.web.zone_id
     evaluate_target_health = true
   }
+}
+
+resource "tls_private_key" "ec2_instance" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "aws_key_pair" "ec2_instance" {
+  key_name   = "ec2-key"
+  public_key = tls_private_key.ec2_instance.public_key_openssh
+}
+
+resource "local_file" "private_key" {
+  content  = tls_private_key.ec2_instance.private_key_pem
+  filename = "${path.module}/ec2_key.pem"
+  file_permission = "0600"
 }
 

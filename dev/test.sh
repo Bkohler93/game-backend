@@ -7,8 +7,11 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
-CONTAINER_NAME="my-redis-test-$(date +%s)"
-REDIS_PORT=6379 
+MATCHMAKE_CONTAINER_NAME="matchmake-redis-test-$(date +%s)"
+GAMEPLAY_CONTAINER_NAME="gameplay-redis-test-$(date +%s)"
+
+REDIS_MATCHMAKE_PORT=6379              
+REDIS_GAMEPLAY_PORT=6380
 
 COVERAGE_FILE="coverage.out"
 APPLY_COVERAGE=0
@@ -47,28 +50,41 @@ done
 
 cleanup() {
   echo "--- Cleanup ---"
-  echo "Stopping container $CONTAINER_NAME..."
-  if docker ps -a --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}$"; then
-    docker stop "$CONTAINER_NAME" || true
-    docker rm "$CONTAINER_NAME" || true
+  echo "Stopping container $MATCHMAKE_CONTAINER_NAME..."
+  if docker ps -a --format '{{.Names}}' | grep -Eq "^${MATCHMAKE_CONTAINER_NAME}$"; then
+    docker stop "$MATCHMAKE_CONTAINER_NAME" || true
+    docker rm "$MATCHMAKE_CONTAINER_NAME" || true
   else
-    echo "Container $CONTAINER_NAME not found, nothing to clean up."
+    echo "Container $MATCHMAKE_CONTAINER_NAME not found, nothing to clean up."
   fi
+  echo "Stopping container $GAMEPLAY_CONTAINER_NAME..."
+    if docker ps -a --format '{{.Names}}' | grep -Eq "^${GAMEPLAY_CONTAINER_NAME}$"; then
+      docker stop "$GAMEPLAY_CONTAINER_NAME" || true
+      docker rm "$GAMEPLAY_CONTAINER_NAME" || true
+    else
+      echo "Container $GAMEPLAY_CONTAINER_NAME not found, nothing to clean up."
+    fi
   echo "--- Cleanup Complete ---"
 }
 trap cleanup EXIT
 
-echo "--- Starting Redis container: $CONTAINER_NAME ---"
+echo "--- Starting Matchmake Redis container: $MATCHMAKE_CONTAINER_NAME ---"
 docker run -d \
-  --name "$CONTAINER_NAME" \
-  -p "$REDIS_PORT:$REDIS_PORT" \
+  --name "$MATCHMAKE_CONTAINER_NAME" \
+  -p "$REDIS_MATCHMAKE_PORT:$REDIS_MATCHMAKE_PORT" \
+  redis/redis-stack:latest
+  
+echo "--- Starting Gameplay Redis container: $GAMEPLAY_CONTAINER_NAME ---"
+docker run -d \
+  --name "$GAMEPLAY_CONTAINER_NAME" \
+  -p "$REDIS_GAMEPLAY_PORT:$REDIS_GAMEPLAY_PORT" \
   redis/redis-stack:latest
 
 echo "Waiting for Redis to be ready (up to 10 seconds)..."
 TIMEOUT=10
 for i in $(seq 1 $TIMEOUT); do
-  if docker exec "$CONTAINER_NAME" redis-cli ping &>/dev/null; then
-    echo "Redis container is ready!"
+  if docker exec "$GAMEPLAY_CONTAINER_NAME" redis-cli ping &>/dev/null; then
+    echo "Redis containers are ready!"
     break
   fi
   echo "Waiting for Redis... ($i/$TIMEOUT)"
@@ -82,7 +98,8 @@ done
 echo "--- Setting Env Variables ---"
 export ENV="PROD"
 export PORT=8083
-export REDIS_ADDR="localhost:$REDIS_PORT"
+export REDIS_MATCHMAKE_ADDR="localhost:$REDIS_MATCHMAKE_PORT"
+export REDIS_GAMEPLAY_ADDR="localhost:$REDIS_GAMEPLAY_PORT"
 
 echo "--- Running Go Tests ---"
 

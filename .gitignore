@@ -8,6 +8,11 @@
 *.so
 *.dylib
 
+# Deployment specific files
+*.pem
+*.deploy.yml
+build/push_images.sh
+
 # Test binary, built with `go test -c`
 *.test
 

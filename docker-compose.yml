@@ -1,0 +1,58 @@
+services:
+  ws-gateway:
+    build:
+      context: .
+      dockerfile: ./cmd/wsgateway/Dockerfile
+    ports:
+      - "8089:8089"
+    environment:
+      - PORT=8089
+      - REDIS_MATCHMAKE_ADDR=redis-matchmaking:6379
+      - REDIS_GAMEPLAY_ADDR=redis-gameplay:6379
+      - ENV=${ENV}
+    depends_on:
+      - redis-matchmaking
+      - redis-gameplay
+    restart: unless-stopped
+  
+  janitor:
+    build:
+      context: .
+      dockerfile: ./cmd/janitor/Dockerfile
+    environment:
+      - REDIS_MATCHMAKE_ADDR=redis-matchmaking:6379
+      - REDIS_GAMEPLAY_ADDR=redis-gameplay:6379
+      - ENV=${ENV}
+    depends_on:
+      - redis-matchmaking
+      - redis-gameplay
+    restart: unless-stopped
+    
+    
+  matchmake:
+    build:
+      context: .
+      dockerfile: ./cmd/matchmake/Dockerfile
+    environment:
+      - REDIS_MATCHMAKE_ADDR=redis-matchmaking:6379
+      - ENV=${ENV}
+    depends_on:
+      - redis-matchmaking
+    restart: unless-stopped
+  
+  redis-matchmaking:
+    image: redis/redis-stack
+    ports:
+      - "6380:6379" # external port:container port (optional, useful for debugging/analytics)
+    restart: unless-stopped
+
+  redis-gameplay:
+    image: redis/redis-stack
+    ports:
+      - "6381:6379" # maybe remove, optional (useful for debugging/analytics)
+    volumes:
+      - gameplay_data:/data
+    restart: unless-stopped
+  
+volumes:
+  gameplay_data:
