@@ -1,6 +1,7 @@
 #!/bin/bash
-
 set -e
+
+cd "$(dirname "$0")/.."
 
 VALID_ARGS=$(getopt -o vcp:r: --long verbose,coverage,coverage-profile:,run: -- "$@")
 if [[ $? -ne 0 ]]; then
@@ -103,7 +104,7 @@ export REDIS_GAMEPLAY_ADDR="localhost:$REDIS_GAMEPLAY_PORT"
 
 echo "--- Running Go Tests ---"
 
-GO_TEST_CMD=(go test .././...)
+GO_TEST_CMD=(go test ./...)
 
 if [[ $APPLY_VERBOSE -eq 1 ]]; then
   GO_TEST_CMD+=(-v)

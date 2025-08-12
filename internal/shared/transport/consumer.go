@@ -7,7 +7,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/internal/shared/utils/files"
 	"github.com/redis/go-redis/v9"
 )
@@ -39,7 +38,7 @@ type MessageGroupConsumerFactory interface {
 
 type BroadcastConsumerType string
 type BroadcastConsumer interface {
-	Subscribe(ctx context.Context) (<-chan message.Discriminable, error)
+	Subscribe(ctx context.Context) (<-chan any, <-chan error)
 }
 
 type RedisMessageGroupConsumer struct {
@@ -121,4 +120,34 @@ func (mc *RedisMessageGroupConsumer) AckMessage(ctx context.Context, msgId strin
 		return ErrScriptNotFound
 	}
 	return mc.luaScripts[files.LuaCGroupAckDelMsg].Run(ctx, mc.rdb, []string{mc.stream}, mc.consumerGroup, msgId).Err()
+}
+
+type RedisBroadcastConsumer struct {
+	rdb     *redis.Client
+	channel string
+}
+
+func (r *RedisBroadcastConsumer) Subscribe(ctx context.Context) (<-chan any, <-chan error) {
+	returnCh := make(chan any)
+	errCh := make(chan error)
+
+	receiveCh := r.rdb.Subscribe(ctx, r.channel).Channel()
+	go func() {
+		for {
+			select {
+			case msg := <-receiveCh:
+				payload := msg.Payload
+				returnCh <- payload
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+			}
+		}
+	}()
+
+	return returnCh, errCh
+}
+
+func NewRedisBroadcastConsumer(rdb *redis.Client, channel string) *RedisBroadcastConsumer {
+	r := &RedisBroadcastConsumer{rdb, channel}
+	return r
 }

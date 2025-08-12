@@ -24,6 +24,10 @@ func (c *MatchmakingTaskCoordinator) ClaimNextPendingTask(ctx context.Context) (
 	return roomID, err
 }
 
+func (c *MatchmakingTaskCoordinator) AddPendingTask(ctx context.Context, roomId uuidstring.ID, startProcessingTime int64) error {
+	return c.store.AddPendingTask(ctx, roomId, startProcessingTime)
+}
+
 func (c *MatchmakingTaskCoordinator) ReclaimStaleInProgressTasks(ctx context.Context, cutoff int64) ([]uuidstring.ID, error) {
 	stale, err := c.store.GetStaleInProgressTasks(ctx, cutoff)
 	if err != nil {

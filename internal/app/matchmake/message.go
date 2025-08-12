@@ -41,7 +41,36 @@ const (
 	PlayerLeftRoom   MatchmakingClientMessageType = "PlayerLeftRoom"
 	PlayerJoinedRoom MatchmakingClientMessageType = "PlayerJoinedRoom"
 	RoomChanged      MatchmakingClientMessageType = "RoomChanged"
+	RoomFull         MatchmakingClientMessageType = "RoomFull"
 )
+
+type RoomFullMessage struct {
+	TypeDiscriminator string        `json:"$type"`
+	ID                string        `json:"ID"`
+	RoomID            uuidstring.ID `json:"room_id"`
+	PlayerCount       int           `json:"player_count"`
+}
+
+func NewRoomFullMessage(roomID uuidstring.ID, playerCount int) *RoomFullMessage {
+	return &RoomFullMessage{
+		TypeDiscriminator: string(RoomFull),
+		ID:                "",
+		RoomID:            roomID,
+		PlayerCount:       playerCount,
+	}
+}
+
+func (r *RoomFullMessage) GetDiscriminator() string {
+	return r.TypeDiscriminator
+}
+
+func (r *RoomFullMessage) GetID() string {
+	return r.ID
+}
+
+func (r *RoomFullMessage) SetID(s string) {
+	r.ID = s
+}
 
 type PlayerLeftRoomMessage struct {
 	ID                string        `json:"ID"`

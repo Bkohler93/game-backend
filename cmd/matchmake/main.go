@@ -10,10 +10,8 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/players"
 	"github.com/bkohler93/game-backend/internal/shared/room"
 	"github.com/bkohler93/game-backend/internal/shared/taskcoordinator"
-	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
-	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
@@ -42,12 +40,14 @@ func main() {
 	playerRepository := players.NewRepository(playerTrackerStore)
 	matchmakingTaskCoordinator := taskcoordinator.NewMatchmakingTaskCoordinator(matchmakingTaskStore)
 
-	matchmakingClientMessageProducer := transport.NewRedisDynamicMessageProducer(redisClient, rediskeys.MatchmakingClientMessageStream)
-	matchmakingServerMessageConsumer, err := transport.NewRedisMessageGroupConsumer(ctx, redisClient, rediskeys.MatchmakingServerMessageStream, rediskeys.MatchmakingServerMessageCGroup, serverId.String())
+	matchmakingClientMessageProducer := matchmake.NewRedisClientMessageProducer(redisClient)
+	matchmakingServerMessageConsumer, err := matchmake.NewRedisMatchmakingServerMessageConsumer(ctx, redisClient, serverId.String())
+	matchmakeWorkerNotifier := matchmake.NewRedisWorkerNotifierBroadcastProducer(redisClient)
+	matchmakeWorkerNotifyListener := matchmake.NewRedisWorkerNotifierListener(redisClient)
 	if err != nil {
 		panic(err)
 	}
-	bus := matchmake.NewBus(matchmakingServerMessageConsumer, matchmakingClientMessageProducer)
+	bus := matchmake.NewBus(matchmakingServerMessageConsumer, matchmakingClientMessageProducer, matchmakeWorkerNotifier, matchmakeWorkerNotifyListener)
 
 	m := matchmake.Matchmaker{
 		//MatchmakingClientMessageProducer: matchmakingClientMessageProducer,

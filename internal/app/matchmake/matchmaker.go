@@ -74,13 +74,23 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req *Request
 			if err.Error() == "ROOM_FULL" {
 				continue
 			}
-			log.Printf("failed to attempt to join the open room - %v\n", err)
+			log.Printf("failed attempt to join the open room - %v\n", err)
 			continue
 		}
 		roomFound = true
+
+		//TODO rm.IsFull might be true, which case you should send RoomFullMessage to all member of room.
+		//TODO AFTER THIS happens, clients need to stop listening on matchmaking channel and move to
+		//TODO listening on game channel. Each game is associated with the roomID, so matchmaker should
+		//TODO also be in communication with the game server that a game in room[roomID] is starting.
 		for _, playerId := range rm.PlayerIds {
 			if playerId == req.UserId {
-				msg := NewRoomChangedMessage(rm.RoomId, rm.PlayerCount, rm.AverageSkill)
+				var msg MatchmakingClientMessage
+				if rm.IsFull == 1 {
+					msg = NewRoomFullMessage(rm.RoomId, rm.PlayerCount)
+				} else {
+					msg = NewRoomChangedMessage(rm.RoomId, rm.PlayerCount, rm.AverageSkill)
+				}
 				bytes, err := json.Marshal(msg)
 				if err != nil {
 					log.Printf("failed to marshal object into json -%v\n", err)
@@ -94,14 +104,20 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req *Request
 					log.Printf("error storing player in active player list - %v\n", err)
 				}
 			} else {
-				msg := NewPlayerJoinedRoomMessage(req.UserId)
+				var msg MatchmakingClientMessage
+				if rm.IsFull == 1 {
+					msg = NewRoomFullMessage(rm.RoomId, rm.PlayerCount)
+				} else {
+					msg = NewPlayerJoinedRoomMessage(req.UserId)
+				}
 				err = m.TransportBus.SendToClient(ctx, playerId, msg)
 				if err != nil {
 					log.Printf("error publishing %v to client\n", msg)
 				}
 			}
+
+			break
 		}
-		break
 	}
 
 	if !roomFound {
@@ -129,10 +145,16 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req *Request
 		if err != nil {
 			log.Printf("error storing player in active player list - %v\n", err)
 		}
-		//TODO Add to sorted set "matchmake_tasks" with a calculated matchmake time as the score (sometime in the future)
-		//TODO and the room ID as the member
+		err = m.MatchmakingTaskCoordinator.AddPendingTask(ctx, rm.RoomId, time.Now().Add(room.PendingTime).Unix())
+		if err != nil {
+			log.Printf("error adding room matchmaking task 0 %v\n", err)
+		}
 
 		//TODO Publish to PubSub 'matchmake:notify_workers'
+		err = m.TransportBus.NotifyMatchmakeWorkers(ctx)
+		if err != nil {
+			log.Printf("error notifying matchmaking task workers - %v\n", err)
+		}
 	}
 	return nil
 }

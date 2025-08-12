@@ -1,1 +1,6 @@
-go run ../cmd/matchmake/main.go
+#!/bin/bash
+set -e
+
+cd "$(dirname "$0")/../.."
+
+go run ./cmd/matchmake/main.go

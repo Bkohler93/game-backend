@@ -3,7 +3,6 @@ package transport
 import (
 	"context"
 
-	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
@@ -17,43 +16,35 @@ type Bus struct {
 	broadcastProducers      map[BroadcastProducerType]BroadcastProducer
 }
 
-func NewBus() *Bus {
-	return &Bus{
-		messageGroupConsumers:   make(map[MessageGroupConsumerType]MessageGroupConsumer),
-		broadcastConsumers:      make(map[BroadcastConsumerType]BroadcastConsumer),
-		messageConsumers:        make(map[MessageConsumerType]MessageConsumer),
-		dynamicMessageProducers: make(map[DynamicMessageProducerType]DynamicMessageProducer),
-		messageProducers:        make(map[MessageProducerType]MessageProducer),
-		broadcastProducers:      make(map[BroadcastProducerType]BroadcastProducer),
+func genericAdd[K comparable, V any](m *map[K]V, key K, value V) {
+	if *m == nil {
+		*m = make(map[K]V)
 	}
-}
-
-func genericAdd[K comparable, V any](m map[K]V, key K, value V) {
-	m[key] = value
+	(*m)[key] = value
 }
 
 func (m *Bus) AddMessageGroupConsumer(t MessageGroupConsumerType, consumer MessageGroupConsumer) {
-	genericAdd(m.messageGroupConsumers, t, consumer)
+	genericAdd(&m.messageGroupConsumers, t, consumer)
 }
 
 func (m *Bus) AddBroadcastConsumer(t BroadcastConsumerType, consumer BroadcastConsumer) {
-	genericAdd(m.broadcastConsumers, t, consumer)
+	genericAdd(&m.broadcastConsumers, t, consumer)
 }
 
 func (m *Bus) AddMessageConsumer(t MessageConsumerType, consumer MessageConsumer) {
-	genericAdd(m.messageConsumers, t, consumer)
+	genericAdd(&m.messageConsumers, t, consumer)
 }
 
 func (m *Bus) AddDynamicMessageProducer(t DynamicMessageProducerType, producer DynamicMessageProducer) {
-	genericAdd(m.dynamicMessageProducers, t, producer)
+	genericAdd(&m.dynamicMessageProducers, t, producer)
 }
 
 func (m *Bus) AddMessageProducer(t MessageProducerType, producer MessageProducer) {
-	genericAdd(m.messageProducers, t, producer)
+	genericAdd(&m.messageProducers, t, producer)
 }
 
 func (m *Bus) AddBroadcastProducer(t BroadcastProducerType, producer BroadcastProducer) {
-	genericAdd(m.broadcastProducers, t, producer)
+	genericAdd(&m.broadcastProducers, t, producer)
 }
 
 func (m *Bus) Send(ctx context.Context, t MessageProducerType, data []byte) error {
@@ -73,6 +64,6 @@ func (m *Bus) StartReceiving(ctx context.Context, consumerType MessageGroupConsu
 func (m *Bus) AckMessage(ctx context.Context, consumerType MessageGroupConsumerType, msgId string) error {
 	return m.messageGroupConsumers[consumerType].AckMessage(ctx, msgId)
 }
-func (m *Bus) Subscribe(ctx context.Context, consumerType BroadcastConsumerType) (<-chan message.Discriminable, error) {
+func (m *Bus) Subscribe(ctx context.Context, consumerType BroadcastConsumerType) (<-chan any, <-chan error) {
 	return m.broadcastConsumers[consumerType].Subscribe(ctx)
 }

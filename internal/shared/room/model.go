@@ -1,7 +1,13 @@
 package room
 
 import (
+	"time"
+
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
+)
+
+const (
+	PendingTime = time.Second * 5
 )
 
 type Room struct {

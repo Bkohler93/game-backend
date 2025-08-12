@@ -20,7 +20,7 @@ type DynamicMessageProducer interface {
 
 type BroadcastProducerType string
 type BroadcastProducer interface {
-	Publish(ctx context.Context, msg any) error
+	Publish(ctx context.Context, data []byte) error
 }
 
 type RedisDynamicMessageProducer struct {
@@ -73,4 +73,18 @@ func NewRedisMessageProducer(rdb *redis.Client, stream string) *RedisMessageProd
 		rdb:    rdb,
 		stream: stream,
 	}
+}
+
+type RedisBroadcastProducer struct {
+	rdb     *redis.Client
+	channel string
+}
+
+func NewRedisBroadcastProducer(rdb *redis.Client, channel string) *RedisBroadcastProducer {
+	return &RedisBroadcastProducer{rdb, channel}
+}
+
+func (r *RedisBroadcastProducer) Publish(ctx context.Context, data []byte) error {
+	err := r.rdb.Publish(ctx, r.channel, data).Err()
+	return err
 }

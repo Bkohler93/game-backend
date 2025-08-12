@@ -98,7 +98,6 @@ func (c *Client) WritePump(ctx context.Context) error {
 			messageId := matchmakingMsg.ID
 			outMsg = matchmakingMsg.Payload.([]byte)
 			ackFunc = func() error {
-
 				err := c.TransportBus.AckMatchmakingMsg(ctx, messageId)
 				return err
 			}

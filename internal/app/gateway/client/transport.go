@@ -34,7 +34,7 @@ type ClientTransportBus struct {
 
 func (f *ClientTransportBusFactory) NewClientTransportBus(clientId uuidstring.ID) *ClientTransportBus {
 	b := &ClientTransportBus{
-		transportBus: transport.NewBus(),
+		transportBus: &transport.Bus{},
 	}
 	clientMessageConsumer := f.matchmakingClientMsgConsumerBuilder(clientId.String())
 	serverMessageProducer := f.matchmakingServerMsgProducerBuilder()

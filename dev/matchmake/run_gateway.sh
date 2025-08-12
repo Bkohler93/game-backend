@@ -1,3 +1,6 @@
-cd "$(dirname "$0")/.."
+#!/bin/bash
+set -e
 
-go run ../cmd/wsgateway/main.go
+cd "$(dirname "$0")/../.."
+
+go run ./cmd/wsgateway/main.go
