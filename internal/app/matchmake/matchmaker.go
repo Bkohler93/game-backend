@@ -3,7 +3,6 @@ package matchmake
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"time"
 
@@ -44,7 +43,7 @@ func (m *Matchmaker) Start(ctx context.Context) {
 
 	for i := 0; i < numWorkers; i++ {
 		eg.Go(func() error {
-			return m.runMatchmakingLoop(ctx)
+			return m.runMatchmakingLoop(ctx, i)
 		})
 	}
 
@@ -93,13 +92,13 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req *Request
 	return nil
 }
 
-func (m *Matchmaker) runMatchmakingLoop(ctx context.Context) error {
+func (m *Matchmaker) runMatchmakingLoop(ctx context.Context, workerOffset int) error {
 	alertCh, errCh := m.TransportBus.ListenForMatchmakeWorkerNotifications(ctx)
+	<-time.NewTimer((time.Millisecond * 25) * time.Duration(workerOffset)).C //allow some time to offset workers
 	timer := time.NewTicker(WorkerRetryIntervalSecs * time.Second)
 	idleCount := 0
 
 	tryMakingMatches := func() error {
-		fmt.Println("checking for a pending task")
 		roomId, err := m.MatchmakingTaskCoordinator.ClaimNextPendingTask(ctx)
 		if err != nil {
 			return err
@@ -114,10 +113,8 @@ func (m *Matchmaker) runMatchmakingLoop(ctx context.Context) error {
 	for {
 		select {
 		case <-timer.C:
-			fmt.Println("timer trigger matchmake retry - idleCount", idleCount)
 			err := tryMakingMatches()
 			if utils.ErrorsAny(err, taskcoordinator.NoPendingTasksAvailableErr, room.ErrDidNotLock) {
-				fmt.Println("no pending tasks avaialable")
 				idleCount++
 				if idleCount > 5 {
 					idleCount = 5
@@ -233,10 +230,8 @@ func (m *Matchmaker) attemptMatchmake(ctx context.Context, roomId uuidstring.ID)
 	if err != nil {
 		return err
 	}
-	fmt.Println("received open rooms", openRooms)
 
 	if len(openRooms) == 0 {
-		fmt.Println("there are no open rooms found")
 		err = m.MatchmakingTaskCoordinator.MoveInProgressTaskToPending(ctx, rm.RoomId)
 		if err != nil {
 			return err

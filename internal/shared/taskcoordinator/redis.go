@@ -87,7 +87,6 @@ func (r *RedisMatchmakingTaskStore) GetStaleInProgressTasks(ctx context.Context,
 
 func (r *RedisMatchmakingTaskStore) MoveInProgressToPendingTask(ctx context.Context, roomID uuidstring.ID) error {
 	t := time.Now().Add(MatchmakeRetryDuration).Unix()
-	fmt.Printf("created pending task with time to process: %d\n", t)
 	err := r.lua[files.LuaStaleMatchmakingToPending].Run(
 		ctx,
 		r.rdb,

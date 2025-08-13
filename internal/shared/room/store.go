@@ -65,7 +65,6 @@ func (store *RedisStore) LockRoom(ctx context.Context, roomId uuidstring.ID) (ke
 }
 
 func (store *RedisStore) UnlockRoom(ctx context.Context, roomId uuidstring.ID, keyValue uuidstring.ID) error {
-	fmt.Printf("Unlocking room[%s] with key[%s]\n", roomId, keyValue)
 	result, err := store.lua[files.LuaUnlockRoom].Run(ctx, store.rdb, []string{rediskeys.RoomLockKey(roomId)}, keyValue.String()).Result()
 	if err != nil {
 		return err
