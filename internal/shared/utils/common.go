@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -24,4 +25,13 @@ func SliceForeachContext[T any](ctx context.Context, items []T, do func(ctx cont
 			do(ctx, i)
 		}
 	}
+}
+
+func ErrorsAny(err error, errs ...error) bool {
+	for _, e := range errs {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return false
 }

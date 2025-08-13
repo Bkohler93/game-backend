@@ -21,6 +21,10 @@ func PlayerString(playerId uuidstring.ID) string {
 
 var MatchmakingServerMessageCGroup = fmt.Sprintf("%s:server_message:cgroup", matchmakeStream)
 
+func RoomLockKey(roomId uuidstring.ID) string {
+	return fmt.Sprintf("lock:room:%s", roomId)
+}
+
 func MatchmakingClientMessageCGroup(clientID uuidstring.ID) string {
 	return fmt.Sprintf("%s:client_message:cgroup:%s", matchmakeStream, clientID)
 }

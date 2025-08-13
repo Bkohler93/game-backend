@@ -1,6 +1,7 @@
 package taskcoordinator
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -60,7 +61,7 @@ func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
 		if err == nil {
 			t.Errorf("expected non-nil err, got - %v", err)
 		}
-		if err.Error() != NoPendingTasksAvailableErr {
+		if !errors.Is(err, NoPendingTasksAvailableErr) {
 			t.Errorf("expected no available pending tasks err, got - %v", err)
 		}
 		if rID != "" {

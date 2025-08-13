@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
+	"github.com/bkohler93/game-backend/internal/shared/constants"
 	"github.com/bkohler93/game-backend/internal/shared/utils/files"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
@@ -14,17 +16,64 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+var (
+	ErrDidNotUnlock = errors.New("failed to unlock room")
+	ErrDidNotLock   = errors.New("failed to lock room")
+)
+
 type Store interface {
 	CreateRoomIndex(context.Context) error
 	GetRoom(context.Context, uuidstring.ID) (Room, error)
 	InsertRoom(context.Context, Room) error
-	QueryOpenRooms(ctx context.Context, region string, minAvgSkill, maxAvgSkill, maxPlayerCount int) ([]Room, error)
+	QueryOpenRooms(ctx context.Context, roomId uuidstring.ID, region string, minAvgSkill, maxAvgSkill, maxPlayerCount int) ([]Room, error)
 	JoinRoom(ctx context.Context, roomId uuidstring.ID, userId uuidstring.ID, userSkill int) (Room, error) //returns number of players in room
+	LockRoom(ctx context.Context, roomId uuidstring.ID) (uuidstring.ID, error)
+	UnlockRoom(ctx context.Context, roomId uuidstring.ID, keyValue uuidstring.ID) error
+	CombineRooms(ctx context.Context, room1 Room, room2 Room) (Room, error)
 }
 
 type RedisStore struct {
 	rdb *redis.Client
 	lua map[string]*redis.Script
+}
+
+func (store *RedisStore) CombineRooms(ctx context.Context, room1 Room, room2 Room) (Room, error) {
+	var rm Room
+	keys := []string{rediskeys.RoomsJSONObject(room1.RoomId), rediskeys.RoomsJSONObject(room2.RoomId)}
+	var result, err = store.lua[files.LuaCombineRooms].Run(ctx, store.rdb, keys, constants.MaxPlayerCount).Result()
+	if err != nil {
+		return rm, err
+	}
+	jsonStr := result.(string)
+	err = json.Unmarshal([]byte(jsonStr), &rm)
+	if err != nil {
+		return rm, errors.New("failed to unmarshal return result into a Room struct")
+	}
+	return rm, nil
+}
+
+func (store *RedisStore) LockRoom(ctx context.Context, roomId uuidstring.ID) (keyValue uuidstring.ID, err error) {
+	keyValue = uuidstring.NewID()
+	ok, err := store.rdb.SetNX(ctx, rediskeys.RoomLockKey(roomId), keyValue.String(), 10*time.Second).Result()
+	if err != nil {
+		return keyValue, err
+	}
+	if !ok {
+		return keyValue, ErrDidNotLock
+	}
+	return keyValue, err
+}
+
+func (store *RedisStore) UnlockRoom(ctx context.Context, roomId uuidstring.ID, keyValue uuidstring.ID) error {
+	fmt.Printf("Unlocking room[%s] with key[%s]\n", roomId, keyValue)
+	result, err := store.lua[files.LuaUnlockRoom].Run(ctx, store.rdb, []string{rediskeys.RoomLockKey(roomId)}, keyValue.String()).Result()
+	if err != nil {
+		return err
+	}
+	if result == 0 {
+		return ErrDidNotUnlock
+	}
+	return nil
 }
 
 func NewRedisRoomStore(rdb *redis.Client) (*RedisStore, error) {
@@ -36,6 +85,18 @@ func NewRedisRoomStore(rdb *redis.Client) (*RedisStore, error) {
 		return &RedisStore{}, fmt.Errorf("failed to load lua src from '%s' with error - %v", files.LuaAddPlayerToRoom, err)
 	}
 	luaScripts[files.LuaAddPlayerToRoom] = redis.NewScript(addPlayerToRoomSrc)
+
+	combineRoomsSrc, err := files.GetLuaScript(files.LuaCombineRooms)
+	if err != nil {
+		return &RedisStore{}, fmt.Errorf("failed to load lua src from '%s' with error - %v", files.LuaCombineRooms, err)
+	}
+	luaScripts[files.LuaCombineRooms] = redis.NewScript(combineRoomsSrc)
+
+	unlockRoomSrc, err := files.GetLuaScript(files.LuaUnlockRoom)
+	if err != nil {
+		return &RedisStore{}, fmt.Errorf("failed to load lua src from '%s' with error - %v", files.LuaUnlockRoom, err)
+	}
+	luaScripts[files.LuaUnlockRoom] = redis.NewScript(unlockRoomSrc)
 
 	return &RedisStore{
 		rdb: rdb,
@@ -133,7 +194,7 @@ func (store *RedisStore) CreateRoomIndex(ctx context.Context) error {
 	).Err()
 }
 
-func (store *RedisStore) QueryOpenRooms(ctx context.Context, region string, minAvgSkill, maxAvgSkill, maxPlayerCount int) ([]Room, error) {
+func (store *RedisStore) QueryOpenRooms(ctx context.Context, roomId uuidstring.ID, region string, minAvgSkill, maxAvgSkill, maxPlayerCount int) ([]Room, error) {
 	var rooms []Room
 	findMatchResult, err := store.rdb.FTSearch(
 		ctx,
@@ -148,5 +209,11 @@ func (store *RedisStore) QueryOpenRooms(ctx context.Context, region string, minA
 	if err != nil {
 		return rooms, fmt.Errorf("error creating slice of models.Room from redis Query result - %v", err)
 	}
-	return rooms, err
+	filtered := rooms[:0]
+	for _, rm := range rooms {
+		if rm.RoomId != roomId {
+			filtered = append(filtered, rm)
+		}
+	}
+	return filtered, err
 }

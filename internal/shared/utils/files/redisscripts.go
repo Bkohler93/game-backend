@@ -8,10 +8,12 @@ import (
 )
 
 const (
-	LuaAddPlayerToRoom              = "add_player_to_room.lua"
-	LuaCGroupAckDelMsg              = "cgroup_xack_xdel_atomic.lua"
-	LuaClaimPendingMoveToInProgress = "claim_pending_move_to_inprogress.lua"
-	LuaStaleMatchmakingToPending    = "stale_matchmaking_to_pending.lua"
+	LuaAddPlayerToRoom           = "add_player_to_room.lua"
+	LuaCGroupAckDelMsg           = "cgroup_xack_xdel_atomic.lua"
+	LuaClaimNextPendingTask      = "claim_next_pending_task.lua"
+	LuaStaleMatchmakingToPending = "stale_matchmaking_to_pending.lua"
+	LuaUnlockRoom                = "unlock_room.lua"
+	LuaCombineRooms              = "combine_rooms.lua"
 )
 
 //go:embed db/redis/scripts/*.lua

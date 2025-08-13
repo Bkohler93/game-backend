@@ -76,6 +76,18 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 	t.Run("store and query rooms", func(t *testing.T) {
 		ctx := t.Context()
 
+		r0 := Room{
+			RoomId:       uuidstring.NewID(),
+			PlayerCount:  1,
+			AverageSkill: 100,
+			Region:       "na",
+			PlayerIds: []uuidstring.ID{
+				uuidstring.NewID(),
+			},
+			CreatedAt: time.Now().Add(time.Second * 30 * -1).Unix(),
+			IsFull:    0,
+		}
+
 		r1 := Room{
 			RoomId:       uuidstring.NewID(),
 			PlayerCount:  1,
@@ -104,6 +116,10 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 			t.Errorf("createRoomIndex should not result in an error. Got - %v", err)
 		}
 
+		err = store.InsertRoom(ctx, r0)
+		if err != nil {
+			t.Errorf("StoreRoom(r1) should not result in an error. Got - %v", err)
+		}
 		err = store.InsertRoom(ctx, r1)
 		if err != nil {
 			t.Errorf("StoreRoom(r1) should not result in an error. Got - %v", err)
@@ -120,7 +136,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 		minAvgSkill, maxAvgSkill := CalculateMinMaxSkill(mySkill, now)
 		maxPlayerCount := 3 - 1
 
-		openRooms, err := store.QueryOpenRooms(ctx, region, minAvgSkill, maxAvgSkill, maxPlayerCount)
+		openRooms, err := store.QueryOpenRooms(ctx, r0.RoomId, region, minAvgSkill, maxAvgSkill, maxPlayerCount)
 		if err != nil {
 			t.Errorf("failed to retrieve open rooms in query - %v", err)
 		}
@@ -135,7 +151,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 		ctx := t.Context()
 		userId := uuidstring.NewID()
 		userSkill := 100
-		_, err := store.QueryOpenRooms(ctx, "na", 90, 120, game.MaxPlayers)
+		_, err := store.QueryOpenRooms(ctx, randomRoom.RoomId, "na", 90, 120, game.MaxPlayers)
 		if err != nil {
 			t.Errorf("query rooms resulted in an error - %v", err)
 		}
@@ -182,7 +198,6 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 		}
 	})
 
-	//TODO also need to test the stream
 	t.Run("test add player to finish filling a room", func(t *testing.T) {
 		ctx := t.Context()
 		room, err := store.GetRoom(ctx, randomRoom.RoomId)
@@ -192,6 +207,68 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 		playerCount := room.PlayerCount
 		if room.IsFull != 1 {
 			t.Errorf("expected room to be full. is not even though player count is %d", playerCount)
+		}
+	})
+
+	t.Run("test combining rooms", func(t *testing.T) {
+		ctx := t.Context()
+
+		r1 := Room{
+			RoomId:       uuidstring.NewID(),
+			PlayerCount:  1,
+			AverageSkill: 100,
+			Region:       "na",
+			PlayerIds: []uuidstring.ID{
+				uuidstring.NewID(),
+			},
+			CreatedAt: time.Now().Add(time.Second * 30 * -1).Unix(),
+			IsFull:    0,
+		}
+
+		r2 := Room{
+			RoomId:       uuidstring.NewID(),
+			PlayerCount:  1,
+			AverageSkill: 104,
+			Region:       "na",
+			PlayerIds: []uuidstring.ID{
+				uuidstring.NewID(),
+			},
+			CreatedAt: time.Now().Add(time.Second * 30 * -2).Unix(),
+			IsFull:    0,
+		}
+		err := store.CreateRoomIndex(ctx)
+		if err != nil && err.Error() != "index already exists" {
+			t.Errorf("createRoomIndex should not result in an error. Got - %v", err)
+		}
+
+		err = store.InsertRoom(ctx, r1)
+		if err != nil {
+			t.Errorf("StoreRoom(r1) should not result in an error. Got - %v", err)
+		}
+		err = store.InsertRoom(ctx, r2)
+		if err != nil {
+			t.Errorf("StoreRoom(r2) should not result in an error. Got - %v", err)
+		}
+
+		expectedAverageSkill := 102
+		r3, err := store.CombineRooms(ctx, r1, r2)
+		if err != nil {
+			t.Errorf("error combining rooms - %v", err)
+		}
+		if r3.RoomId != r2.RoomId {
+			t.Errorf("expected resultant room id to match room that was combined into. Expected %s got %s", r2.RoomId, r3.RoomId)
+		}
+
+		if r3.AverageSkill != expectedAverageSkill {
+			t.Errorf("expected average skill=%d got %d", expectedAverageSkill, r3.AverageSkill)
+		}
+
+		if !slices.Contains(r3.PlayerIds, r1.PlayerIds[0]) || !slices.Contains(r3.PlayerIds, r2.PlayerIds[0]) {
+			t.Errorf("did not find all player ids in the resultant player ids slice of combined room")
+		}
+
+		if r3.IsFull != 1 {
+			t.Errorf("expected room full, got not full")
 		}
 	})
 }

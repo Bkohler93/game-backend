@@ -12,7 +12,7 @@ local now = tonumber(ARGV[1])
 
 local tasks = redis.call('ZRANGEBYSCORE', pendingKey, '-inf', now, 'LIMIT', 0, 1)
 if #tasks == 0 then
-    return {err="no available task in pending set"}
+    return {err="NO_AVAILABLE_TASK"}
 end
 
 local task = tasks[1]

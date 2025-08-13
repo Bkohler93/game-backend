@@ -142,10 +142,10 @@ func (r *RoomChangedMessage) GetDiscriminator() string {
 	return r.TypeDiscriminator
 }
 
-func NewRoomChangedMessage(emptyRoomId uuidstring.ID, playerCount, avgSkill int) *RoomChangedMessage {
+func NewRoomChangedMessage(newRoomId uuidstring.ID, playerCount, avgSkill int) *RoomChangedMessage {
 	return &RoomChangedMessage{
 		TypeDiscriminator: "RoomChanged",
-		NewRoomId:         emptyRoomId,
+		NewRoomId:         newRoomId,
 		PlayerCount:       playerCount,
 		AvgSkill:          avgSkill,
 	}

@@ -24,6 +24,10 @@ func (c *MatchmakingTaskCoordinator) ClaimNextPendingTask(ctx context.Context) (
 	return roomID, err
 }
 
+func (c *MatchmakingTaskCoordinator) MoveInProgressTaskToPending(ctx context.Context, roomID uuidstring.ID) error {
+	return c.store.MoveInProgressToPendingTask(ctx, roomID)
+}
+
 func (c *MatchmakingTaskCoordinator) AddPendingTask(ctx context.Context, roomId uuidstring.ID, startProcessingTime int64) error {
 	return c.store.AddPendingTask(ctx, roomId, startProcessingTime)
 }
@@ -35,10 +39,19 @@ func (c *MatchmakingTaskCoordinator) ReclaimStaleInProgressTasks(ctx context.Con
 	}
 
 	for _, roomID := range stale {
+
 		err = c.store.MoveInProgressToPendingTask(ctx, roomID)
 		if err != nil {
-
+			return nil, err
 		}
 	}
 	return stale, nil
+}
+
+func (c *MatchmakingTaskCoordinator) RemoveInProgressTask(ctx context.Context, id uuidstring.ID) error {
+	return c.store.RemoveInProgressTask(ctx, id)
+}
+
+func (c *MatchmakingTaskCoordinator) RemovePendingTask(ctx context.Context, id uuidstring.ID) error {
+	return c.store.RemovePendingTask(ctx, id)
 }

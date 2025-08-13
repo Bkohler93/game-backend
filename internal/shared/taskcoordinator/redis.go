@@ -13,8 +13,12 @@ import (
 )
 
 const (
-	NoPendingTasksAvailableErr = "no available task in pending set"
-	UnexpectedRedisResultErr   = "unexpected redis result type"
+	MatchmakeRetryDuration = time.Second * 5
+)
+
+var (
+	NoPendingTasksAvailableErr = errors.New("no available task in pending set")
+	UnexpectedRedisResultErr   = errors.New("unexpected redis result type")
 )
 
 type RedisMatchmakingTaskStore struct {
@@ -32,12 +36,12 @@ func NewRedisMatchmakingTaskStore(rdb *redis.Client) (*RedisMatchmakingTaskStore
 	if err != nil {
 		return r, fmt.Errorf("failed to load lua src from '%s' with error - %v", files.LuaStaleMatchmakingToPending, err)
 	}
-	claimPendingMoveToInProgressSrc, err := files.GetLuaScript(files.LuaClaimPendingMoveToInProgress)
+	claimPendingMoveToInProgressSrc, err := files.GetLuaScript(files.LuaClaimNextPendingTask)
 	if err != nil {
-		return r, fmt.Errorf("failed to load lua src from '%s' with error - %v", files.LuaClaimPendingMoveToInProgress, err)
+		return r, fmt.Errorf("failed to load lua src from '%s' with error - %v", files.LuaClaimNextPendingTask, err)
 	}
 
-	r.lua[files.LuaClaimPendingMoveToInProgress] = redis.NewScript(claimPendingMoveToInProgressSrc)
+	r.lua[files.LuaClaimNextPendingTask] = redis.NewScript(claimPendingMoveToInProgressSrc)
 	r.lua[files.LuaStaleMatchmakingToPending] = redis.NewScript(staleMatchmakingToPendingSrc)
 	return r, nil
 }
@@ -82,18 +86,21 @@ func (r *RedisMatchmakingTaskStore) GetStaleInProgressTasks(ctx context.Context,
 }
 
 func (r *RedisMatchmakingTaskStore) MoveInProgressToPendingTask(ctx context.Context, roomID uuidstring.ID) error {
-	t := time.Now().Unix()
+	t := time.Now().Add(MatchmakeRetryDuration).Unix()
+	fmt.Printf("created pending task with time to process: %d\n", t)
 	err := r.lua[files.LuaStaleMatchmakingToPending].Run(
 		ctx,
 		r.rdb,
 		[]string{rediskeys.MatchmakeTaskInProgressSortedSetKey, rediskeys.MatchmakeTaskPendingSortedSetKey},
 		roomID,
-		t,
+		fmt.Sprintf("%d", t),
 	).Err()
-	if err.Error() == "MEMBER_NOT_FOUND" {
-		return fmt.Errorf("failed to move non-existent in-progress member %s - %v", roomID, err)
-	} else if err.Error() == "MEMBER_NOT_ADDED" {
-		return fmt.Errorf("failed to add member %s with time %d - %v", roomID, t, err)
+	if err != nil {
+		if err.Error() == "MEMBER_NOT_FOUND" {
+			return fmt.Errorf("failed to move non-existent in-progress member %s - %v", roomID, err)
+		} else if err.Error() == "MEMBER_NOT_ADDED" {
+			return fmt.Errorf("failed to add member %s with time %d - %v", roomID, t, err)
+		}
 	}
 	return err
 }
@@ -101,7 +108,7 @@ func (r *RedisMatchmakingTaskStore) MoveInProgressToPendingTask(ctx context.Cont
 func (r *RedisMatchmakingTaskStore) ClaimPendingTask(ctx context.Context) (uuidstring.ID, error) {
 	now := time.Now().Unix()
 
-	res, err := r.lua[files.LuaClaimPendingMoveToInProgress].Run(
+	res, err := r.lua[files.LuaClaimNextPendingTask].Run(
 		ctx,
 		r.rdb,
 		[]string{
@@ -111,12 +118,15 @@ func (r *RedisMatchmakingTaskStore) ClaimPendingTask(ctx context.Context) (uuids
 		fmt.Sprintf("%d", now),
 	).Result()
 	if err != nil {
+		if err.Error() == "NO_AVAILABLE_TASK" {
+			return "", NoPendingTasksAvailableErr
+		}
 		return "", err
 	}
 
 	taskID, ok := res.(string)
 	if !ok {
-		return "", errors.New(UnexpectedRedisResultErr)
+		return "", UnexpectedRedisResultErr
 	}
 	return uuidstring.ID(taskID), nil
 }

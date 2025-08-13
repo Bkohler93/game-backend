@@ -22,9 +22,21 @@ type Room struct {
 }
 
 type QueryRoomRequest struct {
-	Skill       int
-	TimeCreated int64
-	Region      string
+	RoomId              uuidstring.ID
+	Skill               int
+	TimeCreated         int64
+	Region              string
+	MaxAllowablePlayers int
+}
+
+func InitialQueryRoomRequest(skill int, timeCreated int64, region string) *QueryRoomRequest {
+	return &QueryRoomRequest{
+		Skill:               skill,
+		TimeCreated:         timeCreated,
+		Region:              region,
+		MaxAllowablePlayers: 2, //TODO if expanding this infrastructure to multiple games this value will need to be set differently somehow.
+		//TODO probably not be a magic number anyways. Create const  somewhere?
+	}
 }
 
 type JoinRoomRequest struct {
