@@ -29,7 +29,8 @@ type Store interface {
 	JoinRoom(ctx context.Context, roomId uuidstring.ID, userId uuidstring.ID, userSkill int) (Room, error) //returns number of players in room
 	LockRoom(ctx context.Context, roomId uuidstring.ID) (uuidstring.ID, error)
 	UnlockRoom(ctx context.Context, roomId uuidstring.ID, keyValue uuidstring.ID) error
-	CombineRooms(ctx context.Context, room1 Room, room2 Room) (Room, error)
+	CombineRooms(ctx context.Context, roomOneId uuidstring.ID, roomTwoId uuidstring.ID) (Room, error)
+	RemovePlayer(ctx context.Context, roomId uuidstring.ID, userId uuidstring.ID, userSkill int) ([]uuidstring.ID, error)
 }
 
 type RedisStore struct {
@@ -37,19 +38,29 @@ type RedisStore struct {
 	lua map[string]*redis.Script
 }
 
-func (store *RedisStore) CombineRooms(ctx context.Context, room1 Room, room2 Room) (Room, error) {
+func (store *RedisStore) RemovePlayer(ctx context.Context, roomId uuidstring.ID, userId uuidstring.ID, userSkill int) ([]uuidstring.ID, error) {
+	var remainingPlayers []uuidstring.ID
+	keys := []string{rediskeys.RoomsJSONObject(roomId)}
+	var result, err = store.lua[files.LuaRemovePlayerFromRoom].Run(ctx, store.rdb, keys, userId.String(), userSkill).Result()
+	if err != nil {
+		return remainingPlayers, err
+	}
+	if result == "0" {
+		return remainingPlayers, err
+	}
+	remainingPlayers, err = redisutils.JsonTo[[]uuidstring.ID](result)
+	return remainingPlayers, err
+}
+
+func (store *RedisStore) CombineRooms(ctx context.Context, roomOneId uuidstring.ID, roomTwoId uuidstring.ID) (Room, error) {
 	var rm Room
-	keys := []string{rediskeys.RoomsJSONObject(room1.RoomId), rediskeys.RoomsJSONObject(room2.RoomId)}
+	keys := []string{rediskeys.RoomsJSONObject(roomOneId), rediskeys.RoomsJSONObject(roomTwoId)}
 	var result, err = store.lua[files.LuaCombineRooms].Run(ctx, store.rdb, keys, constants.MaxPlayerCount).Result()
 	if err != nil {
 		return rm, err
 	}
-	jsonStr := result.(string)
-	err = json.Unmarshal([]byte(jsonStr), &rm)
-	if err != nil {
-		return rm, errors.New("failed to unmarshal return result into a Room struct")
-	}
-	return rm, nil
+	rm, err = redisutils.JsonTo[Room](result)
+	return rm, err
 }
 
 func (store *RedisStore) LockRoom(ctx context.Context, roomId uuidstring.ID) (keyValue uuidstring.ID, err error) {
@@ -90,6 +101,12 @@ func NewRedisRoomStore(rdb *redis.Client) (*RedisStore, error) {
 		return &RedisStore{}, fmt.Errorf("failed to load lua src from '%s' with error - %v", files.LuaCombineRooms, err)
 	}
 	luaScripts[files.LuaCombineRooms] = redis.NewScript(combineRoomsSrc)
+
+	removePlayerSrc, err := files.GetLuaScript(files.LuaRemovePlayerFromRoom)
+	if err != nil {
+		return &RedisStore{}, fmt.Errorf("failed to load lua src from '%s' with error - %v", files.LuaRemovePlayerFromRoom, err)
+	}
+	luaScripts[files.LuaRemovePlayerFromRoom] = redis.NewScript(removePlayerSrc)
 
 	unlockRoomSrc, err := files.GetLuaScript(files.LuaUnlockRoom)
 	if err != nil {

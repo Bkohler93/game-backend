@@ -14,6 +14,7 @@ const (
 	LuaStaleMatchmakingToPending = "stale_matchmaking_to_pending.lua"
 	LuaUnlockRoom                = "unlock_room.lua"
 	LuaCombineRooms              = "combine_rooms.lua"
+	LuaRemovePlayerFromRoom      = "remove_player_from_room.lua"
 )
 
 //go:embed db/redis/scripts/*.lua

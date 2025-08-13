@@ -3,6 +3,7 @@ package matchmake
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -10,15 +11,12 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/players"
 	"github.com/bkohler93/game-backend/internal/shared/room"
 	"github.com/bkohler93/game-backend/internal/shared/taskcoordinator"
-	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"golang.org/x/sync/errgroup"
 )
 
 type Matchmaker struct {
-	//MatchmakingClientMessageProducer transport.DynamicMessageProducer
-	//MatchmakingServerMessageConsumer transport.MessageGroupConsumer
 	TransportBus               *TransportBus
 	RoomRepository             *room.Repository
 	PlayerRepository           *players.Repository
@@ -28,6 +26,7 @@ type Matchmaker struct {
 const (
 	numWorkers              = 4
 	WorkerRetryIntervalSecs = 5 //seconds
+	RetryLockPauseTime      = time.Millisecond * 100
 )
 
 func (m *Matchmaker) Start(ctx context.Context) {
@@ -114,7 +113,7 @@ func (m *Matchmaker) runMatchmakingLoop(ctx context.Context, workerOffset int) e
 		select {
 		case <-timer.C:
 			err := tryMakingMatches()
-			if utils.ErrorsAny(err, taskcoordinator.NoPendingTasksAvailableErr, room.ErrDidNotLock) {
+			if utils.ErrorsIsAny(err, taskcoordinator.NoPendingTasksAvailableErr, room.ErrDidNotLock) {
 				idleCount++
 				if idleCount > 5 {
 					idleCount = 5
@@ -136,7 +135,7 @@ func (m *Matchmaker) runMatchmakingLoop(ctx context.Context, workerOffset int) e
 				continue
 			}
 			err := tryMakingMatches()
-			if utils.ErrorsAny(err, taskcoordinator.NoPendingTasksAvailableErr, room.ErrDidNotLock) {
+			if utils.ErrorsIsAny(err, taskcoordinator.NoPendingTasksAvailableErr, room.ErrDidNotLock) {
 				continue
 			}
 			if err != nil {
@@ -169,8 +168,7 @@ func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 				var err error
 				switch msg := matchmakingMsg.(type) {
 				case *ExitMatchmakingMessage:
-					//TODO err = m.processExitMatchmakingRequest(gCtx, msg)
-					err = nil
+					err = m.processExitMatchmakingRequest(gCtx, msg)
 				case *RequestMatchmakingMessage:
 					err = m.processMatchmakingRequest(gCtx, msg)
 					if err != nil {
@@ -181,9 +179,6 @@ func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 				//TODO 	otherwise should just continue reading from the server message stream
 				if err == nil {
 					err = m.TransportBus.AckServerMessage(gCtx, matchmakingMsg.GetID())
-					if errors.Is(err, transport.ErrScriptNotFound) {
-						return err
-					}
 				}
 				if err != nil {
 					log.Printf("received an error - %v", err)
@@ -241,9 +236,9 @@ func (m *Matchmaker) attemptMatchmake(ctx context.Context, roomId uuidstring.ID)
 
 	didMakeMatch := false
 	for _, openRm := range openRooms {
-		combinedRoom, err := m.didMakeMatch(ctx, rm, openRm)
+		combinedRoom, err := m.combineRooms(ctx, rm, openRm)
 		if err != nil {
-			if errors.Is(err, room.ErrRoomFull) {
+			if utils.ErrorsIsAny(err, room.ErrRoomFull, room.ErrDidNotLock) {
 				continue
 			}
 			return err
@@ -274,34 +269,77 @@ func (m *Matchmaker) attemptMatchmake(ctx context.Context, roomId uuidstring.ID)
 	return nil
 }
 
-func (m *Matchmaker) didMakeMatch(ctx context.Context, rm room.Room, rmToJoin room.Room) (room.Room, error) {
+func (m *Matchmaker) combineRooms(ctx context.Context, rm room.Room, rmToJoin room.Room) (room.Room, error) {
 	var combinedRoom room.Room
-	rmToJoinKeyLock, err := m.RoomRepository.LockRoom(ctx, rmToJoin.RoomId)
+
+	lockKey, err := m.RoomRepository.LockRoom(ctx, rmToJoin.RoomId)
 	if err != nil {
 		return combinedRoom, err
 	}
 	defer func() {
-		err = m.RoomRepository.UnlockRoom(ctx, rmToJoin.RoomId, rmToJoinKeyLock)
+		err = m.RoomRepository.UnlockRoom(ctx, rmToJoin.RoomId, lockKey)
 		if err != nil {
-			log.Println("failed to unlock room in didMakeMatch -", err)
+			log.Println("[VERY BAD SHOULD NOT HAPPEN] failed to unlock room when trying to combine rooms - ", err)
 		}
 	}()
-	combinedRoom, err = m.RoomRepository.CombineRooms(ctx, rm, rmToJoin) //this means that "rm" gets absorbed into "openRm",
+
+	combinedRoom, err = m.RoomRepository.CombineRooms(ctx, rm.RoomId, rmToJoin.RoomId) //this means that "rm" gets absorbed into "openRm",
 	if err != nil {
-		//TODO tolerable errors include openRm is full/would be overpopulated, try to join next room
-		return combinedRoom, err //this should be unrecoverable, crashing the workers
+		return combinedRoom, err
 	}
 	err = m.MatchmakingTaskCoordinator.RemoveInProgressTask(ctx, rm.RoomId) //room is absorbed, no more need for tasks
 	if err != nil {
-		//TODO This error is not good if it occurs. Important to note if this ever happens
-		log.Printf("=== terrible error === unknown error removing room with id[%s] from inprogress and pending tasks - %v", rm.RoomId, err)
 		return combinedRoom, err
 	}
 
 	return combinedRoom, nil
 }
 
-//func canMatch(u1 message.MatchmakingRequest, u2 message.MatchmakingRequest) bool {
-//	//TODO make the match rule more... something
-//	return u1.UserId != u2.UserId
-//}
+// processExitMatchmakingRequest is executed after the websocket server sends an ExitMatchmakingRequest. The websocket
+// server sends this after the client disconnects during the matchmaking phase, whether done by the user or another issue.
+func (m *Matchmaker) processExitMatchmakingRequest(ctx context.Context, msg *ExitMatchmakingMessage) error {
+	var lockKey, roomId uuidstring.ID
+	var err error
+
+	for {
+		roomId, err = m.PlayerRepository.GetPlayerRoom(ctx, msg.UserId)
+		if err != nil {
+			return err
+		}
+		lockKey, err = m.RoomRepository.LockRoom(ctx, roomId)
+		if err == nil {
+			break
+		} else {
+			if !errors.Is(err, room.ErrDidNotLock) {
+				return err
+			}
+		}
+		<-time.NewTimer(RetryLockPauseTime).C
+	}
+
+	defer func() {
+		err := m.RoomRepository.UnlockRoom(ctx, roomId, lockKey)
+		if err != nil {
+			log.Printf("failed to unlock room[%s] - %v\n", roomId, err)
+		}
+	}()
+	newPlayerIds, err := m.RoomRepository.RemovePlayer(ctx, roomId, msg.UserId, msg.UserSkill)
+	if err != nil {
+		return err
+	}
+
+	for _, playerId := range newPlayerIds {
+		playerLeftMsg := NewPlayerLeftRoomMessage(msg.UserId)
+		fmt.Printf("sending message to player[%s] - %v\n", playerId, playerLeftMsg)
+		err = m.TransportBus.SendToClient(ctx, playerId, &playerLeftMsg)
+		if err != nil {
+			log.Printf("failed to send message to client[%s] - %v\n", playerId, err)
+		}
+	}
+
+	err = m.MatchmakingTaskCoordinator.RemovePendingTask(ctx, roomId)
+	if err == nil {
+		fmt.Println("successfully handled exitmatchmaking request")
+	}
+	return err
+}

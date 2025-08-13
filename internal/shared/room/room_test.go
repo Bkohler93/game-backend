@@ -235,7 +235,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 		}
 
 		expectedAverageSkill := 102
-		r3, err := store.CombineRooms(ctx, r1, r2)
+		r3, err := store.CombineRooms(ctx, r1.RoomId, r2.RoomId)
 		if err != nil {
 			t.Errorf("error combining rooms - %v", err)
 		}
@@ -253,6 +253,85 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 
 		if r3.IsFull != 1 {
 			t.Errorf("expected room full, got not full")
+		}
+	})
+
+	t.Run("test removing player from room - room 	becomes empty", func(t *testing.T) {
+		ctx := t.Context()
+		userId := uuidstring.NewID()
+
+		r1 := Room{
+			RoomId:       uuidstring.NewID(),
+			PlayerCount:  1,
+			AverageSkill: 100,
+			Region:       "na",
+			PlayerIds: []uuidstring.ID{
+				userId,
+			},
+			CreatedAt: time.Now().Add(time.Second * 30 * -1).Unix(),
+			IsFull:    0,
+		}
+
+		err := store.InsertRoom(ctx, r1)
+		if err != nil {
+			t.Errorf("StoreRoom(r1) should not result in an error. Got - %v", err)
+		}
+
+		newPlayerIds, err := store.RemovePlayer(ctx, r1.RoomId, userId, 100)
+		if err != nil {
+			t.Errorf("remove player resulted in an error - %v", err)
+		}
+
+		if len(newPlayerIds) != 0 {
+			t.Errorf("expected no player ids to be returned, got %d", len(newPlayerIds))
+		}
+	})
+
+	t.Run("test removing player from room - players remain", func(t *testing.T) {
+		ctx := t.Context()
+		userOneId := uuidstring.NewID()
+		userTwoId := uuidstring.NewID()
+
+		r1 := Room{
+			RoomId:       uuidstring.NewID(),
+			PlayerCount:  2,
+			AverageSkill: 100,
+			Region:       "na",
+			PlayerIds: []uuidstring.ID{
+				userOneId,
+				userTwoId,
+			},
+			CreatedAt: time.Now().Add(time.Second * 30 * -1).Unix(),
+			IsFull:    0,
+		}
+
+		err := store.InsertRoom(ctx, r1)
+		if err != nil {
+			t.Errorf("StoreRoom(r1) should not result in an error. Got - %v", err)
+		}
+
+		newPlayerIds, err := store.RemovePlayer(ctx, r1.RoomId, userOneId, 98)
+		if err != nil {
+			t.Errorf("remove player resulted in an error - %v", err)
+		}
+
+		if len(newPlayerIds) != 1 {
+			t.Errorf("expected 1 player id to be returned, got %d", len(newPlayerIds))
+		}
+
+		if !slices.Contains(newPlayerIds, userTwoId) {
+			t.Errorf("expected newPlayerIds to have userTwoId[%s] - got %v", userTwoId, newPlayerIds)
+		}
+
+		rm, err := store.GetRoom(ctx, r1.RoomId)
+		if err != nil {
+			t.Errorf("unexpected error retrieving room[%s]", r1.RoomId)
+		}
+
+		expectedNewAverageSkill := 102
+
+		if rm.AverageSkill != expectedNewAverageSkill {
+			t.Errorf("expected updated skill to be %d - got %d", expectedNewAverageSkill, rm.AverageSkill)
 		}
 	})
 }

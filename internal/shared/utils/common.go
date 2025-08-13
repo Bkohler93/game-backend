@@ -27,7 +27,7 @@ func SliceForeachContext[T any](ctx context.Context, items []T, do func(ctx cont
 	}
 }
 
-func ErrorsAny(err error, errs ...error) bool {
+func ErrorsIsAny(err error, errs ...error) bool {
 	for _, e := range errs {
 		if errors.Is(err, e) {
 			return true

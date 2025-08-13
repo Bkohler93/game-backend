@@ -228,6 +228,7 @@ type ExitMatchmakingMessage struct {
 	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	UserId            uuidstring.ID `json:"user_id"`
+	UserSkill         int           `json:"user_skill"`
 }
 
 func (m *ExitMatchmakingMessage) GetID() string {

@@ -44,6 +44,7 @@ func (r *Repository) GetRoom(ctx context.Context, roomID uuidstring.ID) (Room, e
 	return r.store.GetRoom(ctx, roomID)
 }
 
+// LockRoom returns ErrDidNotLock if unable to lock
 func (r *Repository) LockRoom(ctx context.Context, id uuidstring.ID) (uuidstring.ID, error) {
 	return r.store.LockRoom(ctx, id)
 }
@@ -53,9 +54,18 @@ func (r *Repository) UnlockRoom(ctx context.Context, id uuidstring.ID, key uuids
 }
 
 // CombineRooms combines room1 into room2, returning the resulting room with same id as room2
-func (r *Repository) CombineRooms(ctx context.Context, room1 Room, room2 Room) (combinedRoom Room, err error) {
-	combinedRoom, err = r.store.CombineRooms(ctx, room1, room2)
+func (r *Repository) CombineRooms(ctx context.Context, roomOneId uuidstring.ID, roomTwoId uuidstring.ID) (combinedRoom Room, err error) {
+	combinedRoom, err = r.store.CombineRooms(ctx, roomOneId, roomTwoId)
 	return
+}
+
+func (r *Repository) RemovePlayer(ctx context.Context, roomId uuidstring.ID, userId uuidstring.ID, userSkill int) ([]uuidstring.ID, error) {
+	rm, err := r.store.RemovePlayer(ctx, roomId, userId, userSkill)
+	if err != nil {
+		return rm, err
+	}
+	//TODO remove player and delete room if were the only one in it
+	return rm, err
 }
 
 func NewRepository(store Store) *Repository {
