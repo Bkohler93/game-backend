@@ -44,7 +44,7 @@ func (m *Matchmaker) Start(ctx context.Context) {
 
 	for i := 0; i < numWorkers; i++ {
 		eg.Go(func() error {
-			return m.makeMatches(ctx)
+			return m.runMatchmakingLoop(ctx)
 		})
 	}
 
@@ -93,7 +93,7 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req *Request
 	return nil
 }
 
-func (m *Matchmaker) makeMatches(ctx context.Context) error {
+func (m *Matchmaker) runMatchmakingLoop(ctx context.Context) error {
 	alertCh, errCh := m.TransportBus.ListenForMatchmakeWorkerNotifications(ctx)
 	timer := time.NewTicker(WorkerRetryIntervalSecs * time.Second)
 	idleCount := 0
