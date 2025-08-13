@@ -25,7 +25,7 @@ type Store interface {
 	CreateRoomIndex(context.Context) error
 	GetRoom(context.Context, uuidstring.ID) (Room, error)
 	InsertRoom(context.Context, Room) error
-	QueryOpenRooms(ctx context.Context, roomId uuidstring.ID, region string, minAvgSkill, maxAvgSkill, maxPlayerCount int) ([]Room, error)
+	QueryOpenRooms(ctx context.Context, region string, minAvgSkill, maxAvgSkill, maxPlayerCount int) ([]Room, error)
 	JoinRoom(ctx context.Context, roomId uuidstring.ID, userId uuidstring.ID, userSkill int) (Room, error) //returns number of players in room
 	LockRoom(ctx context.Context, roomId uuidstring.ID) (uuidstring.ID, error)
 	UnlockRoom(ctx context.Context, roomId uuidstring.ID, keyValue uuidstring.ID) error
@@ -193,7 +193,7 @@ func (store *RedisStore) CreateRoomIndex(ctx context.Context) error {
 	).Err()
 }
 
-func (store *RedisStore) QueryOpenRooms(ctx context.Context, roomId uuidstring.ID, region string, minAvgSkill, maxAvgSkill, maxPlayerCount int) ([]Room, error) {
+func (store *RedisStore) QueryOpenRooms(ctx context.Context, region string, minAvgSkill, maxAvgSkill, maxPlayerCount int) ([]Room, error) {
 	var rooms []Room
 	findMatchResult, err := store.rdb.FTSearch(
 		ctx,
@@ -208,11 +208,6 @@ func (store *RedisStore) QueryOpenRooms(ctx context.Context, roomId uuidstring.I
 	if err != nil {
 		return rooms, fmt.Errorf("error creating slice of models.Room from redis Query result - %v", err)
 	}
-	filtered := rooms[:0]
-	for _, rm := range rooms {
-		if rm.RoomId != roomId {
-			filtered = append(filtered, rm)
-		}
-	}
-	return filtered, err
+	return rooms, nil
+
 }

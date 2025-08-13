@@ -76,18 +76,6 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 	t.Run("store and query rooms", func(t *testing.T) {
 		ctx := t.Context()
 
-		r0 := Room{
-			RoomId:       uuidstring.NewID(),
-			PlayerCount:  1,
-			AverageSkill: 100,
-			Region:       "na",
-			PlayerIds: []uuidstring.ID{
-				uuidstring.NewID(),
-			},
-			CreatedAt: time.Now().Add(time.Second * 30 * -1).Unix(),
-			IsFull:    0,
-		}
-
 		r1 := Room{
 			RoomId:       uuidstring.NewID(),
 			PlayerCount:  1,
@@ -116,10 +104,6 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 			t.Errorf("createRoomIndex should not result in an error. Got - %v", err)
 		}
 
-		err = store.InsertRoom(ctx, r0)
-		if err != nil {
-			t.Errorf("StoreRoom(r1) should not result in an error. Got - %v", err)
-		}
 		err = store.InsertRoom(ctx, r1)
 		if err != nil {
 			t.Errorf("StoreRoom(r1) should not result in an error. Got - %v", err)
@@ -136,7 +120,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 		minAvgSkill, maxAvgSkill := CalculateMinMaxSkill(mySkill, now)
 		maxPlayerCount := 3 - 1
 
-		openRooms, err := store.QueryOpenRooms(ctx, r0.RoomId, region, minAvgSkill, maxAvgSkill, maxPlayerCount)
+		openRooms, err := store.QueryOpenRooms(ctx, region, minAvgSkill, maxAvgSkill, maxPlayerCount)
 		if err != nil {
 			t.Errorf("failed to retrieve open rooms in query - %v", err)
 		}
@@ -151,7 +135,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 		ctx := t.Context()
 		userId := uuidstring.NewID()
 		userSkill := 100
-		_, err := store.QueryOpenRooms(ctx, randomRoom.RoomId, "na", 90, 120, game.MaxPlayers)
+		_, err := store.QueryOpenRooms(ctx, "na", 90, 120, game.MaxPlayers)
 		if err != nil {
 			t.Errorf("query rooms resulted in an error - %v", err)
 		}

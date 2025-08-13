@@ -17,7 +17,15 @@ type Repository struct {
 
 func (r *Repository) QueryOpenRooms(ctx context.Context, req *QueryRoomRequest) ([]Room, error) {
 	minSkill, maxSkill := CalculateMinMaxSkill(req.Skill, req.TimeCreated)
-	return r.store.QueryOpenRooms(ctx, req.RoomId, req.Region, minSkill, maxSkill, 2) //TODO the '2' magic number should be a constant used for whatever game is being queried for
+
+	rooms, err := r.store.QueryOpenRooms(ctx, req.Region, minSkill, maxSkill, 2) //TODO the '2' magic number should be a constant used for whatever game is being queried for
+	filtered := rooms[:0]
+	for _, rm := range rooms {
+		if rm.RoomId != req.RoomId {
+			filtered = append(filtered, rm)
+		}
+	}
+	return filtered, err
 }
 
 func (r *Repository) JoinRoom(ctx context.Context, req JoinRoomRequest, room Room) (Room, error) {
