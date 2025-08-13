@@ -31,7 +31,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	roomRepository := room.NewRepository(roomStore)
+	roomRepository, err := room.NewRepository(ctx, roomStore)
+	if err != nil {
+		panic(err)
+	}
 
 	clientTransportBusFactory := client.NewClientTransportBusFactory(redisClient, func(clientId string) transport.MessageGroupConsumer {
 		stream := rediskeys.MatchmakingClientMessageStream(uuidstring.ID(clientId))

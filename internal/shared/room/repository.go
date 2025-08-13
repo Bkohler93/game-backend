@@ -68,8 +68,10 @@ func (r *Repository) RemovePlayer(ctx context.Context, roomId uuidstring.ID, use
 	return rm, err
 }
 
-func NewRepository(store Store) *Repository {
-	return &Repository{
+func NewRepository(ctx context.Context, store Store) (*Repository, error) {
+	r := &Repository{
 		store: store,
 	}
+	err := r.CreateRoomIndex(ctx)
+	return r, err
 }

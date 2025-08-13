@@ -36,7 +36,10 @@ func main() {
 	}
 	serverId := uuidstring.NewID()
 
-	roomRepository := room.NewRepository(roomStore)
+	roomRepository, err := room.NewRepository(ctx, roomStore)
+	if err != nil {
+		panic(err)
+	}
 	playerRepository := players.NewRepository(playerTrackerStore)
 	matchmakingTaskCoordinator := taskcoordinator.NewMatchmakingTaskCoordinator(matchmakingTaskStore)
 
@@ -50,7 +53,6 @@ func main() {
 	bus := matchmake.NewBus(matchmakingServerMessageConsumer, matchmakingClientMessageProducer, matchmakeWorkerNotifier, matchmakeWorkerNotifyListener)
 
 	m := matchmake.Matchmaker{
-		//MatchmakingClientMessageProducer: matchmakingClientMessageProducer,
 		TransportBus:               bus,
 		RoomRepository:             roomRepository,
 		PlayerRepository:           playerRepository,

@@ -29,13 +29,15 @@ const (
 	RetryLockPauseTime      = time.Millisecond * 100
 )
 
+// Start begins processing incoming matchmaking messages from clients and spawns <numWorkers> go routines to
+// begin pulling pending matchmaking tasks and attempt to make new matches. Errors produced by Processing matchmaking requests
+// or from the matchmaking loop should be breaking errors that cause the entire matchmaker service to go down.
+// TODO dig through all error sources and create handle-able errors to be checked within the functions called in the
+//
+//	go routines.
 func (m *Matchmaker) Start(ctx context.Context) {
-	err := m.RoomRepository.CreateRoomIndex(ctx)
-	if err != nil {
-		log.Printf("failed to create room index. Shutting down - %v\n", err)
-		return
-	}
 	var eg errgroup.Group
+
 	eg.Go(func() error {
 		return m.ProcessMatchmakingMessages(ctx)
 	})
@@ -93,7 +95,9 @@ func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req *Request
 
 func (m *Matchmaker) runMatchmakingLoop(ctx context.Context, workerOffset int) error {
 	alertCh, errCh := m.TransportBus.ListenForMatchmakeWorkerNotifications(ctx)
+
 	<-time.NewTimer((time.Millisecond * 25) * time.Duration(workerOffset)).C //allow some time to offset workers
+
 	timer := time.NewTicker(WorkerRetryIntervalSecs * time.Second)
 	idleCount := 0
 
@@ -143,7 +147,7 @@ func (m *Matchmaker) runMatchmakingLoop(ctx context.Context, workerOffset int) e
 			}
 
 		case err := <-errCh:
-			//TODO if err is fatal, return it
+			//TODO if err is fatal, return it, shouldn't be limited to context.Canceled
 			log.Printf("worker received error - %v\n", err)
 			if errors.Is(err, context.Canceled) {
 				return err
@@ -152,6 +156,10 @@ func (m *Matchmaker) runMatchmakingLoop(ctx context.Context, workerOffset int) e
 	}
 }
 
+// ProcessMatchmakingMessages
+// TODO Errors produced in this method need to be examined (through testing or other) in order to create handle-able errors
+//
+//	that do not cause this method to return an error, but handle them gracefully and continue processing.
 func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 	msgCh, errCh := m.TransportBus.StartReceivingServerMessages(ctx)
 	eg, gCtx := errgroup.WithContext(ctx)
@@ -168,14 +176,17 @@ func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 				var err error
 				switch msg := matchmakingMsg.(type) {
 				case *ExitMatchmakingMessage:
-					err = m.processExitMatchmakingRequest(gCtx, msg)
+					err = m.processExitMatchmakingRequest(gCtx, msg) //errors received from this are breaking
+					if err != nil {
+						return err
+					}
 				case *RequestMatchmakingMessage:
-					err = m.processMatchmakingRequest(gCtx, msg)
+					err = m.processMatchmakingRequest(gCtx, msg) // errors received from this are breaking
 					if err != nil {
 						return err
 					}
 				}
-				//TODO handle breaking errors that should cancel anymore message processing (any failures to interact with redis db.
+				//TODO maybe handle breaking errors that should cancel anymore message processing (any failures to interact with redis db.
 				//TODO 	otherwise should just continue reading from the server message stream
 				if err == nil {
 					err = m.TransportBus.AckServerMessage(gCtx, matchmakingMsg.GetID())
@@ -297,6 +308,9 @@ func (m *Matchmaker) combineRooms(ctx context.Context, rm room.Room, rmToJoin ro
 
 // processExitMatchmakingRequest is executed after the websocket server sends an ExitMatchmakingRequest. The websocket
 // server sends this after the client disconnects during the matchmaking phase, whether done by the user or another issue.
+// TODO Errors produced in this method need to be examined (through testing or other) in order to create handle-able errors
+//
+//	that do not cause this method to return an error, but handle them gracefully and continue processing.
 func (m *Matchmaker) processExitMatchmakingRequest(ctx context.Context, msg *ExitMatchmakingMessage) error {
 	var lockKey, roomId uuidstring.ID
 	var err error
