@@ -352,8 +352,13 @@ func (m *Matchmaker) processExitMatchmakingRequest(ctx context.Context, msg *Exi
 	}
 
 	err = m.MatchmakingTaskCoordinator.RemovePendingTask(ctx, roomId)
-	if err == nil {
-		fmt.Println("successfully handled exitmatchmaking request")
+	if err != nil {
+		log.Println("error removing pending task")
 	}
-	return err
+
+	err = m.PlayerRepository.SetPlayerInactive(ctx, msg.UserId)
+	if err != nil {
+		log.Println("error setting player[", msg.UserId, "] inactive - ", err)
+	}
+	return nil
 }

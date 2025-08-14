@@ -11,10 +11,15 @@ import (
 type TrackerStore interface {
 	Set(ctx context.Context, playerId, roomId uuidstring.ID) error
 	Get(ctx context.Context, playerId uuidstring.ID) (uuidstring.ID, error)
+	Delete(ctx context.Context, playerId uuidstring.ID) error
 }
 
 type RedisTrackerStore struct {
 	rdb *redis.Client
+}
+
+func (r *RedisTrackerStore) Delete(ctx context.Context, playerId uuidstring.ID) error {
+	return r.rdb.Del(ctx, playerKey(playerId)).Err()
 }
 
 func NewRedisPlayerTrackerStore(rdb *redis.Client) *RedisTrackerStore {

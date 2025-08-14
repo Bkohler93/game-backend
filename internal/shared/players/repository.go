@@ -24,3 +24,7 @@ func (r *Repository) SetPlayerActive(ctx context.Context, playerId uuidstring.ID
 func (r *Repository) GetPlayerRoom(ctx context.Context, playerId uuidstring.ID) (uuidstring.ID, error) {
 	return r.trackerStore.Get(ctx, playerId)
 }
+
+func (r *Repository) SetPlayerInactive(ctx context.Context, playerId uuidstring.ID) error {
+	return r.trackerStore.Delete(ctx, playerId)
+}
