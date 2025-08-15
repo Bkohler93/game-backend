@@ -8,7 +8,7 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/message"
 )
 
-func UnwrapAndForward[T message.Message](ctx context.Context, wrappedMsgCh <-chan WrappedConsumeMsg, errCh <-chan error, messageTypeConstructorRegistry map[string]func() T) (<-chan T, <-chan error) {
+func UnwrapAndForward[T message.Message](ctx context.Context, wrappedMsgCh <-chan AckableMessage, errCh <-chan error, messageTypeConstructorRegistry map[string]func() T) (<-chan T, <-chan error) {
 	msgCh := make(chan T)
 	go func() {
 		for {
@@ -24,7 +24,11 @@ func UnwrapAndForward[T message.Message](ctx context.Context, wrappedMsgCh <-cha
 					log.Printf("received invalid msg payload - %v", err)
 					continue
 				}
-				msg.SetID(wrappedMsg.ID)
+
+				//TODO trying out using AckFunc instead of constructing it using the ID later, keeps ID from being passed to client
+				msg.SetAck(wrappedMsg.AckFunc)
+				msg.SetMetaData(wrappedMsg.Metadata)
+				//msg.SetID(wrappedMsg.ID)
 
 				msgCh <- msg
 			case err := <-errCh:

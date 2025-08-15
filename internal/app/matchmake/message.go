@@ -1,6 +1,8 @@
 package matchmake
 
 import (
+	"context"
+
 	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
@@ -49,6 +51,16 @@ type RoomFullMessage struct {
 	ID                string        `json:"ID"`
 	RoomID            uuidstring.ID `json:"room_id"`
 	PlayerCount       int           `json:"player_count"`
+
+	ack func(context.Context) error `json:"-"`
+}
+
+func (r *RoomFullMessage) Ack(ctx context.Context) error {
+	return r.ack(ctx)
+}
+
+func (r *RoomFullMessage) SetAck(f func(context.Context) error) {
+	r.ack = f
 }
 
 func NewRoomFullMessage(roomID uuidstring.ID, playerCount int) *RoomFullMessage {
@@ -76,15 +88,25 @@ type PlayerLeftRoomMessage struct {
 	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	UserLeftId        uuidstring.ID `json:"user_left_id"`
+
+	ack func(context.Context) error `json:"-"`
 }
 
-func (p *PlayerLeftRoomMessage) GetID() string {
-	return p.ID
+func (p *PlayerLeftRoomMessage) Ack(ctx context.Context) error {
+	return p.ack(ctx)
 }
 
-func (p *PlayerLeftRoomMessage) SetID(s string) {
-	p.ID = s
+func (p *PlayerLeftRoomMessage) SetAck(f func(context.Context) error) {
+	p.ack = f
 }
+
+//func (p *PlayerLeftRoomMessage) GetID() string {
+//	return p.ID
+//}
+//
+//func (p *PlayerLeftRoomMessage) SetID(s string) {
+//	p.ID = s
+//}
 
 func (p *PlayerLeftRoomMessage) GetDiscriminator() string {
 	return p.TypeDiscriminator
@@ -101,15 +123,25 @@ type PlayerJoinedRoomMessage struct {
 	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	UserJoinedId      uuidstring.ID `json:"user_joined_id"`
+
+	ack func(context.Context) error `json:"-"`
 }
 
-func (p *PlayerJoinedRoomMessage) GetID() string {
-	return p.ID
+func (p *PlayerJoinedRoomMessage) Ack(ctx context.Context) error {
+	return p.ack(ctx)
 }
 
-func (p *PlayerJoinedRoomMessage) SetID(s string) {
-	p.ID = s
+func (p *PlayerJoinedRoomMessage) SetAck(f func(context.Context) error) {
+	p.ack = f
 }
+
+//func (p *PlayerJoinedRoomMessage) GetID() string {
+//	return p.ID
+//}
+//
+//func (p *PlayerJoinedRoomMessage) SetID(s string) {
+//	p.ID = s
+//}
 
 func (p *PlayerJoinedRoomMessage) GetDiscriminator() string {
 	return p.TypeDiscriminator
@@ -128,15 +160,25 @@ type RoomChangedMessage struct {
 	NewRoomId         uuidstring.ID `json:"new_room_id"`
 	PlayerCount       int           `json:"player_count"`
 	AvgSkill          int           `json:"avg_skill"`
+
+	ack func(context.Context) error `json:"-"`
 }
 
-func (r *RoomChangedMessage) GetID() string {
-	return r.ID
+func (r *RoomChangedMessage) Ack(ctx context.Context) error {
+	return r.ack(ctx)
 }
 
-func (r *RoomChangedMessage) SetID(s string) {
-	r.ID = s
+func (r *RoomChangedMessage) SetAck(f func(context.Context) error) {
+	r.ack = f
 }
+
+//func (r *RoomChangedMessage) GetID() string {
+//	return r.ID
+//}
+//
+//func (r *RoomChangedMessage) SetID(s string) {
+//	r.ID = s
+//}
 
 func (r *RoomChangedMessage) GetDiscriminator() string {
 	return r.TypeDiscriminator
@@ -195,15 +237,25 @@ type RequestMatchmakingMessage struct {
 	TimeCreated       int64         `redis:"time_created" json:"time_created"` //TODO remove this? The Room object will contain a Retry count
 	Skill             int           `redis:"skill" json:"skill"`
 	Region            string        `redis:"region" json:"region"`
+
+	ack func(context.Context) error `json:"-" redis:"-"`
 }
 
-func (m *RequestMatchmakingMessage) GetID() string {
-	return m.ID
+func (m *RequestMatchmakingMessage) Ack(ctx context.Context) error {
+	return m.ack(ctx)
 }
 
-func (m *RequestMatchmakingMessage) SetID(s string) {
-	m.ID = s
+func (m *RequestMatchmakingMessage) SetAck(f func(context.Context) error) {
+	m.ack = f
 }
+
+//func (m *RequestMatchmakingMessage) GetID() string {
+//	return m.ID
+//}
+//
+//func (m *RequestMatchmakingMessage) SetID(s string) {
+//	m.ID = s
+//}
 
 func (m *RequestMatchmakingMessage) GetDiscriminator() string {
 	return m.TypeDiscriminator
@@ -229,15 +281,25 @@ type ExitMatchmakingMessage struct {
 	TypeDiscriminator string        `json:"$type"`
 	UserId            uuidstring.ID `json:"user_id"`
 	UserSkill         int           `json:"user_skill"`
+
+	ack func(context.Context) error `json:"-"`
 }
 
-func (m *ExitMatchmakingMessage) GetID() string {
-	return m.ID
+func (m *ExitMatchmakingMessage) Ack(ctx context.Context) error {
+	return m.ack(ctx)
 }
 
-func (m *ExitMatchmakingMessage) SetID(s string) {
-	m.ID = s
+func (m *ExitMatchmakingMessage) SetAck(f func(context.Context) error) {
+	m.ack = f
 }
+
+//func (m *ExitMatchmakingMessage) GetID() string {
+//	return m.ID
+//}
+//
+//func (m *ExitMatchmakingMessage) SetID(s string) {
+//	m.ID = s
+//}
 
 func (m *ExitMatchmakingMessage) GetDiscriminator() string {
 	return m.TypeDiscriminator

@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -11,9 +12,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type WrappedConsumeMsg struct {
-	ID      string
-	Payload any
+type AckableMessage struct {
+	AckFunc  func(context.Context) error
+	Payload  any
+	Metadata map[string]string
 }
 
 var (
@@ -22,13 +24,13 @@ var (
 
 type MessageGroupConsumerType string
 type MessageGroupConsumer interface {
-	StartReceiving(ctx context.Context) (<-chan WrappedConsumeMsg, <-chan error)
+	StartReceiving(ctx context.Context) (<-chan AckableMessage, <-chan error)
 	AckMessage(ctx context.Context, msgId string) error
 }
 
 type MessageConsumerType string
 type MessageConsumer interface {
-	StartReceiving(ctx context.Context) (<-chan WrappedConsumeMsg, <-chan error)
+	StartReceiving(ctx context.Context) (<-chan AckableMessage, <-chan error)
 }
 
 type MessageGroupConsumerBuilderFunc = func(consumerId string) MessageGroupConsumer
@@ -73,8 +75,8 @@ func NewRedisMessageGroupConsumer(ctx context.Context, rdb *redis.Client, stream
 	return r, err
 }
 
-func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan WrappedConsumeMsg, <-chan error) {
-	msgCh := make(chan WrappedConsumeMsg)
+func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan AckableMessage, <-chan error) {
+	msgCh := make(chan AckableMessage)
 	errCh := make(chan error, 1)
 	go func() {
 		defer close(msgCh)
@@ -102,12 +104,24 @@ func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan
 				if !ok {
 					log.Printf("error trying to structure the stream reply - %v", err)
 				}
-				bytes := []byte(data)
+				payload := []byte(data)
 				id := streamResults[0].Messages[0].ID
 
-				msgCh <- WrappedConsumeMsg{
-					ID:      id,
-					Payload: bytes,
+				metaDataBytes := []byte(streamResults[0].Messages[0].Values["metaData"].(string))
+
+				var metaData map[string]string
+				err = json.Unmarshal(metaDataBytes, &metaData)
+				if err != nil {
+					log.Printf("error trying to unmarshal metadata - %v", err)
+				}
+
+				msgCh <- AckableMessage{
+					AckFunc: func(ackCtx context.Context) error {
+						return mc.AckMessage(ackCtx, id)
+					},
+					//ID:      id,
+					Payload:  payload,
+					Metadata: metaData,
 				}
 			}
 		}

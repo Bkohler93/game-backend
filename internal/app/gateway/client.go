@@ -1,4 +1,4 @@
-package client
+package gateway
 
 import (
 	"context"
@@ -21,11 +21,14 @@ var (
 )
 
 type Client struct {
-	Conn             *websocket.Conn
-	MatchmakingMsgCh chan transport.WrappedConsumeMsg
-	GameMsgCh        chan transport.WrappedConsumeMsg
-	ID               uuidstring.ID
-	TransportBus     *ClientTransportBus
+	Conn *websocket.Conn
+	//MatchmakingMsgCh chan transport.AckableMessage
+	//GameMsgCh        chan transport.AckableMessage
+	outChan   chan transport.AckableMessage
+	ID        uuidstring.ID
+	routeChan chan message.Envelope
+
+	//TransportBus     *TransportBus
 }
 
 var upgrader = websocket.Upgrader{}
@@ -36,7 +39,8 @@ const (
 	maxMessageSize = 512
 )
 
-func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, transportBusFactory *ClientTransportBusFactory) (*Client, error) {
+// func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, transportBusFactory *ClientTransportBusFactory) (*Client, error) {
+func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request) (*Client, error) {
 	var c *Client
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -50,17 +54,18 @@ func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, tran
 		return nil
 	})
 	id := uuidstring.NewID() //TODO this should be stored by the client, or retrieved from a database
-	transportBus := transportBusFactory.NewClientTransportBus(id)
+	//transportBus := transportBusFactory.NewClientTransportBus(id)
 
 	//TODO this is temporary until we figure out where the id comes from
 	conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("id=%s", id)))
 
 	c = &Client{
-		Conn:             conn,
-		MatchmakingMsgCh: make(chan transport.WrappedConsumeMsg),
-		GameMsgCh:        make(chan transport.WrappedConsumeMsg),
-		ID:               id,
-		TransportBus:     transportBus,
+		Conn: conn,
+		//MatchmakingMsgCh: make(chan transport.AckableMessage),
+		//GameMsgCh:        make(chan transport.AckableMessage),
+		outChan: make(chan transport.AckableMessage),
+		ID:      id,
+		//TransportBus:     transportBus,
 		//matchmakingClientMsgConsumer: matchmakingClientMsgConsumer,
 		//matchmakingServerMsgProducer: matchmakingServerMsgProducer,
 	}
@@ -89,32 +94,35 @@ func (c *Client) PingLoop(ctx context.Context) error {
 func (c *Client) WritePump(ctx context.Context) error {
 
 	for {
-		var outMsg []byte
-		var ackFunc func() error
+		//var outMsg []byte
+		//var ackFunc func() error
 		select {
 		case <-ctx.Done():
 			return nil
-		case matchmakingMsg := <-c.MatchmakingMsgCh:
-			messageId := matchmakingMsg.ID
-			outMsg = matchmakingMsg.Payload.([]byte)
-			ackFunc = func() error {
-				err := c.TransportBus.AckMatchmakingMsg(ctx, messageId)
-				return err
+		case outMsg := <-c.outChan:
+			bytes := outMsg.Payload.([]byte)
+			//case matchmakingMsg := <-c.MatchmakingMsgCh:
+			//	messageId := matchmakingMsg.ID
+			//	outMsg = matchmakingMsg.Payload.([]byte)
+			//	ackFunc = func() error {
+			//		err := c.TransportBus.AckMatchmakingMsg(ctx, messageId)
+			//		return err
+			//	}
+			//case gameMsg := <-c.GameMsgCh:
+			//	outMsg = gameMsg.Payload.([]byte)
+			//	ackFunc = func() error {
+			//		//TODO return c.TransportBus.AckGameMsg(ctx, messageId)
+			//		return nil
+			//	}
+			//}
+			err := c.Conn.WriteMessage(websocket.TextMessage, bytes)
+			if err != nil {
+				return fmt.Errorf("failed to write to websocket - %v", err)
 			}
-		case gameMsg := <-c.GameMsgCh:
-			outMsg = gameMsg.Payload.([]byte)
-			ackFunc = func() error {
-				//TODO return c.TransportBus.AckGameMsg(ctx, messageId)
-				return nil
+			err = outMsg.AckFunc(ctx)
+			if err != nil {
+				log.Println("failed to successfully call ACK for outgoing message")
 			}
-		}
-		err := c.Conn.WriteMessage(websocket.TextMessage, outMsg)
-		if err != nil {
-			return fmt.Errorf("failed to write to websocket - %v", err)
-		}
-		err = ackFunc()
-		if err != nil {
-			log.Println("failed to successfully call ACK for outgoing message")
 		}
 	}
 }
@@ -168,9 +176,10 @@ func (c *Client) ReadPump(ctx context.Context) error {
 				log.Printf("client %s: failed to unmarshal message: %v\n", c.ID, err)
 				continue
 			}
-			if err = c.RouteMessage(envelope, ctx); err != nil {
-				log.Printf("routing message failed - %v\n", err)
-			}
+			c.routeChan <- envelope
+			//if err = c.RouteMessage(envelope, ctx); err != nil {
+			//	log.Printf("routing message failed - %v\n", err)
+			//}
 		}
 	}
 }

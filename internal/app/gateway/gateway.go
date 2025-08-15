@@ -8,25 +8,27 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bkohler93/game-backend/internal/app/gateway/client"
 	"github.com/bkohler93/game-backend/internal/shared/room"
 	"github.com/gorilla/websocket"
 	"golang.org/x/sync/errgroup"
 )
 
 type Gateway struct {
-	clientTransportBusFactory *client.ClientTransportBusFactory
-	roomRepository            *room.Repository
-	addr                      string
-	hub                       *Hub
+	//clientTransportBusFactory *client.ClientTransportBusFactory
+	roomRepository *room.Repository
+	addr           string
+	hub            *Hub
 }
 
-func NewGateway(addr string, rr *room.Repository, clientTransportBusFactory *client.ClientTransportBusFactory) Gateway {
+func NewGateway(addr string, rr *room.Repository, transportBusFactory *TransportBusFactory) Gateway {
+	r := &Router{
+		busFactory: transportBusFactory,
+	}
 	return Gateway{
-		clientTransportBusFactory: clientTransportBusFactory,
-		roomRepository:            rr,
-		addr:                      addr,
-		hub:                       NewHub(),
+		//clientTransportBusFactory: clientTransportBusFactory,
+		roomRepository: rr,
+		addr:           addr,
+		hub:            NewHub(r),
 	}
 }
 
@@ -43,7 +45,7 @@ func (g *Gateway) Start(ctx context.Context) {
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		eg, ctx := errgroup.WithContext(ctx)
 
-		c, err := client.NewClient(ctx, w, r, g.clientTransportBusFactory)
+		c, err := NewClient(ctx, w, r)
 		if err != nil {
 			log.Printf("failed to initialize client websocket - %v\n", err)
 			return
@@ -64,16 +66,14 @@ func (g *Gateway) Start(ctx context.Context) {
 			return c.WritePump(ctx)
 		})
 
-		eg.Go(func() error {
-			return c.ReadPump(ctx)
-		})
+		eg.Go(func() error { return c.ReadPump(ctx) })
 
-		eg.Go(func() error {
-			return c.ListenToServices(ctx)
-		})
+		//eg.Go(func() error {
+		//	return c.ListenToServices(ctx)
+		//})
 
 		if err = eg.Wait(); err != nil {
-			if errors.Is(err, client.ErrClientClosedConnection) {
+			if errors.Is(err, ErrClientClosedConnection) {
 			} else {
 				log.Println("worker ended due to unknown error -", err)
 			}

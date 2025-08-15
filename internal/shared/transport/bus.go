@@ -58,7 +58,7 @@ func (m *Bus) SendTo(ctx context.Context, producerType DynamicMessageProducerTyp
 func (m *Bus) Publish(ctx context.Context, producerType BroadcastProducerType, data []byte) error {
 	return m.broadcastProducers[producerType].Publish(ctx, data)
 }
-func (m *Bus) StartReceiving(ctx context.Context, consumerType MessageGroupConsumerType) (msgCh <-chan WrappedConsumeMsg, errCh <-chan error) {
+func (m *Bus) StartReceiving(ctx context.Context, consumerType MessageGroupConsumerType) (msgCh <-chan AckableMessage, errCh <-chan error) {
 	return m.messageGroupConsumers[consumerType].StartReceiving(ctx)
 }
 func (m *Bus) AckMessage(ctx context.Context, consumerType MessageGroupConsumerType, msgId string) error {

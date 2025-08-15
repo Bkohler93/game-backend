@@ -1,6 +1,7 @@
 package message
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,11 +17,23 @@ const (
 
 type Message interface {
 	Discriminable
-	Identifiable
+	//Identifiable
+	AckFuncAccessor
+	MetaDataAccessor
+}
+
+type MetaDataAccessor interface {
+	GetMetaData() map[string]string
+	SetMetaData(map[string]string)
 }
 
 type Discriminable interface {
 	GetDiscriminator() string
+}
+
+type AckFuncAccessor interface {
+	Ack(context.Context) error
+	SetAck(func(context.Context) error)
 }
 
 type Identifiable interface {

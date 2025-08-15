@@ -189,7 +189,8 @@ func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 				//TODO maybe handle breaking errors that should cancel anymore message processing (any failures to interact with redis db.
 				//TODO 	otherwise should just continue reading from the server message stream
 				if err == nil {
-					err = m.TransportBus.AckServerMessage(gCtx, matchmakingMsg.GetID())
+					err = matchmakingMsg.Ack(gCtx)
+					//err = m.TransportBus.AckServerMessage(gCtx, matchmakingMsg.GetID())
 				}
 				if err != nil {
 					log.Printf("received an error - %v", err)
