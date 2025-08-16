@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/bkohler93/game-backend/internal/app/gateway"
 	"github.com/bkohler93/game-backend/internal/app/matchmake"
+	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
@@ -236,4 +238,73 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 			t.Error(err)
 		}
 	})
+}
+
+func TestRedisChannels(t *testing.T) {
+	ctx, cancelFunc := context.WithTimeout(t.Context(), time.Second*2)
+	defer cancelFunc()
+
+	rdb, err := redisutils.NewRedisMatchmakeClient(ctx)
+	if err != nil {
+		t.Errorf("unexepcted error when creating redis client - %v", err)
+	}
+	recCh := make(chan message.Envelope)
+	streamName := "supsup:supsup"
+
+	//start to receive from a stream
+	go func() {
+		streamResults, err := rdb.XRead(ctx, &redis.XReadArgs{
+			Streams: []string{streamName},
+			Count:   0,
+			Block:   0,
+			ID:      "$",
+		}).Result()
+		if err != nil {
+			t.Errorf("failed to read from stream - %v", err)
+		}
+
+		res := streamResults[0].Messages[0].Values["payload"].(string)
+		var env message.Envelope
+		err = json.Unmarshal([]byte(res), &env)
+		if err != nil {
+			t.Errorf("error unmarshalling into envelope - %v", err)
+		}
+		recCh <- env
+	}()
+	id := uuidstring.NewID()
+	msg := matchmake.NewPlayerLeftRoomMessage(id)
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		t.Errorf("failed to marshal msg - %v", err)
+	}
+
+	data := message.Envelope{
+		Type:    "Sauced",
+		Payload: payload,
+	}
+
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		t.Errorf("failed to marshal data - %v", err)
+	}
+	fmt.Printf("sending bytes - %v\n", bytes)
+
+	res, err := rdb.XAdd(ctx, &redis.XAddArgs{
+		Stream: streamName,
+		Values: map[string]interface{}{
+			"payload": string(bytes),
+		},
+		ID: "*",
+	}).Result()
+	if err != nil {
+		t.Errorf("error writing to stream - %v", err)
+	}
+	fmt.Println("message id -", res)
+
+	select {
+	case resResult := <-recCh:
+		fmt.Println("received result - ", resResult)
+	case <-ctx.Done():
+		t.Errorf("context timed out - %v", ctx.Err())
+	}
 }
