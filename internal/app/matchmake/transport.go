@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
@@ -63,15 +64,11 @@ func (b *TransportBus) ListenForMatchmakeWorkerNotifications(ctx context.Context
 }
 
 func (b *TransportBus) NotifyMatchmakeWorkers(ctx context.Context) error {
-	return b.transportBus.Publish(ctx, MatchmakeWorkerNotifier, []byte(""))
+	return b.transportBus.Publish(ctx, MatchmakeWorkerNotifier, message.EmptyMessage{})
 }
 
 func (b *TransportBus) SendToClient(ctx context.Context, id uuidstring.ID, msg MatchmakingClientMessage) error {
-	bytes, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	return b.transportBus.SendTo(ctx, ClientMessageProducer, id, bytes)
+	return b.transportBus.SendTo(ctx, ClientMessageProducer, id, msg, msg.RemoveMetaData())
 }
 
 func (b *TransportBus) StartReceivingServerMessages(ctx context.Context) (<-chan MatchmakingServerMessage, <-chan error) {

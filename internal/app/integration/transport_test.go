@@ -12,6 +12,7 @@ import (
 
 	"github.com/bkohler93/game-backend/internal/app/gateway"
 	"github.com/bkohler93/game-backend/internal/app/matchmake"
+	"github.com/bkohler93/game-backend/internal/shared/constants/metadata"
 	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
@@ -88,7 +89,7 @@ func TestRedisMatchmakingClientMessageConsumerAndProducer(t *testing.T) {
 				t.Errorf("error marshalling message - %v", err)
 			}
 
-			err = producer.SendTo(ctx, userId, bytes)
+			err = producer.SendTo(ctx, userId, bytes, nil)
 			if err != nil {
 				t.Errorf("unexpected error trying to publish msg - %v", err)
 			}
@@ -184,7 +185,7 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 				t.Errorf("error trying to marshal payload - %v", err)
 			}
 
-			err = producer.Send(ctx, bytes)
+			err = producer.Send(ctx, bytes, nil)
 			if err != nil {
 				t.Errorf("unexpected error trying to publish msg - %v", err)
 			}
@@ -217,6 +218,79 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 						if !msg.Equals(originalMsg) {
 							t.Errorf("expected consumed message {%v} to equal original message, got - {%v}", msg, originalMsg)
 						}
+					}
+
+					count++
+					if count == messageCount {
+						ticker.Stop()
+						doneCh <- 1
+						return
+					}
+				}
+			}
+		}()
+
+		select {
+		case <-doneCh:
+			break
+		case err := <-errCh:
+			t.Error(err)
+		}
+	})
+
+	t.Run("producer sends metadata and consumer recieves it", func(t *testing.T) {
+		consumer, producer, flush := startup(t)
+		defer flush()
+
+		name := "ButtholeSmeller"
+		timeCreated := time.Now().Unix()
+		skill := 100
+		region := "na"
+		messageCount := 4
+		newId := uuidstring.NewID()
+		originalMsg := matchmake.NewRequestMatchmakingMessage(newId, name, timeCreated, skill, region)
+		for i := 0; i < messageCount; i++ {
+
+			payload := originalMsg
+
+			bytes, err := json.Marshal(payload)
+			if err != nil {
+				t.Errorf("error trying to marshal payload - %v", err)
+			}
+
+			metaData := map[string]interface{}{
+				metadata.NewGameState: metadata.Setup,
+				metadata.RoomID:       newId.String(),
+			}
+
+			err = producer.Send(ctx, bytes, metaData)
+			if err != nil {
+				t.Errorf("unexpected error trying to publish msg - %v", err)
+			}
+		}
+		doneCh := make(chan int)
+		errCh := make(chan error)
+		ticker := time.NewTicker(time.Second * 2)
+
+		go func() {
+			matchmakingServerMsgCh, matchmakingServerErrCh := consumer.StartReceiving(ctx)
+			count := 0
+			for {
+				select {
+				case <-ticker.C:
+					ticker.Stop()
+					errCh <- errors.New("timed out while waiting for consumer to receive message")
+					return
+				case msgErr := <-matchmakingServerErrCh:
+					t.Errorf("error while consuming from MatchmakingClientMessage stream - %v", msgErr)
+				case msg := <-matchmakingServerMsgCh:
+					metaData := msg.GetMetadata()
+					if metaData[metadata.RoomID] != newId.String() {
+						t.Errorf("expected room ID in metadata to be %s got %s", newId.String(), metaData[metadata.RoomID])
+					}
+
+					if metaData[metadata.NewGameState] != metadata.Setup {
+						t.Errorf("expected new game state in metadata to be %s got %s", metadata.Setup, metaData[metadata.NewGameState])
 					}
 
 					count++

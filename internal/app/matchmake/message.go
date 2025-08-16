@@ -52,7 +52,16 @@ type RoomFullMessage struct {
 	RoomID            uuidstring.ID `json:"room_id"`
 	PlayerCount       int           `json:"player_count"`
 
-	ack func(context.Context) error `json:"-"`
+	ack      func(context.Context) error `json:"-"`
+	metaData map[string]interface{}      `json:"-"`
+}
+
+func (r *RoomFullMessage) GetMetaData() map[string]interface{} {
+	return r.metaData
+}
+
+func (r *RoomFullMessage) SetMetaData(m map[string]interface{}) {
+	r.metaData = m
 }
 
 func (r *RoomFullMessage) Ack(ctx context.Context) error {
@@ -89,7 +98,16 @@ type PlayerLeftRoomMessage struct {
 	TypeDiscriminator string        `json:"$type"`
 	UserLeftId        uuidstring.ID `json:"user_left_id"`
 
-	ack func(context.Context) error `json:"-"`
+	ack      func(context.Context) error `json:"-"`
+	metaData map[string]interface{}      `json:"-"`
+}
+
+func (p *PlayerLeftRoomMessage) GetMetaData() map[string]interface{} {
+	return p.metaData
+}
+
+func (p *PlayerLeftRoomMessage) SetMetaData(m map[string]interface{}) {
+	p.metaData = m
 }
 
 func (p *PlayerLeftRoomMessage) Ack(ctx context.Context) error {
@@ -124,7 +142,16 @@ type PlayerJoinedRoomMessage struct {
 	TypeDiscriminator string        `json:"$type"`
 	UserJoinedId      uuidstring.ID `json:"user_joined_id"`
 
-	ack func(context.Context) error `json:"-"`
+	ack      func(context.Context) error `json:"-"`
+	metaData map[string]interface{}      `json:"-"`
+}
+
+func (p *PlayerJoinedRoomMessage) GetMetaData() map[string]interface{} {
+	return p.metaData
+}
+
+func (p *PlayerJoinedRoomMessage) SetMetaData(m map[string]interface{}) {
+	p.metaData = m
 }
 
 func (p *PlayerJoinedRoomMessage) Ack(ctx context.Context) error {
@@ -155,13 +182,22 @@ func NewPlayerJoinedRoomMessage(userJoinedId uuidstring.ID) *PlayerJoinedRoomMes
 }
 
 type RoomChangedMessage struct {
-	ID                string        `json:"ID"`
-	TypeDiscriminator string        `json:"$type"`
-	NewRoomId         uuidstring.ID `json:"new_room_id"`
-	PlayerCount       int           `json:"player_count"`
-	AvgSkill          int           `json:"avg_skill"`
+	MetaData          map[string]interface{} `json:"meta_data"`
+	ID                string                 `json:"ID"`
+	TypeDiscriminator string                 `json:"$type"`
+	NewRoomId         uuidstring.ID          `json:"new_room_id"`
+	PlayerCount       int                    `json:"player_count"`
+	AvgSkill          int                    `json:"avg_skill"`
 
 	ack func(context.Context) error `json:"-"`
+}
+
+func (r *RoomChangedMessage) GetMetaData() map[string]interface{} {
+	return r.MetaData
+}
+
+func (r *RoomChangedMessage) SetMetaData(m map[string]interface{}) {
+	r.MetaData = m
 }
 
 func (r *RoomChangedMessage) Ack(ctx context.Context) error {
@@ -238,7 +274,16 @@ type RequestMatchmakingMessage struct {
 	Skill             int           `redis:"skill" json:"skill"`
 	Region            string        `redis:"region" json:"region"`
 
-	ack func(context.Context) error `json:"-" redis:"-"`
+	ack      func(context.Context) error `json:"-" redis:"-"`
+	metaData map[string]interface{}      `json:"-"`
+}
+
+func (m *RequestMatchmakingMessage) GetMetaData() map[string]interface{} {
+	return m.metaData
+}
+
+func (m *RequestMatchmakingMessage) SetMetaData(md map[string]interface{}) {
+	m.metaData = md
 }
 
 func (m *RequestMatchmakingMessage) Ack(ctx context.Context) error {
@@ -282,7 +327,16 @@ type ExitMatchmakingMessage struct {
 	UserId            uuidstring.ID `json:"user_id"`
 	UserSkill         int           `json:"user_skill"`
 
-	ack func(context.Context) error `json:"-"`
+	ack      func(context.Context) error `json:"-"`
+	MetaData map[string]interface{}      `json:"-"`
+}
+
+func (m *ExitMatchmakingMessage) GetMetaData() map[string]interface{} {
+	return m.MetaData
+}
+
+func (m *ExitMatchmakingMessage) SetMetaData(md map[string]interface{}) {
+	m.MetaData = md
 }
 
 func (m *ExitMatchmakingMessage) Ack(ctx context.Context) error {

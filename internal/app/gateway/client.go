@@ -13,7 +13,6 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/gorilla/websocket"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -24,8 +23,9 @@ type Client struct {
 	Conn *websocket.Conn
 	//MatchmakingMsgCh chan transport.AckableMessage
 	//GameMsgCh        chan transport.AckableMessage
-	outChan   chan transport.AckableMessage
+	writeChan chan message.Envelope
 	ID        uuidstring.ID
+	RoomID    uuidstring.ID
 	routeChan chan message.Envelope
 
 	//TransportBus     *TransportBus
@@ -63,8 +63,8 @@ func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request) (*Cl
 		Conn: conn,
 		//MatchmakingMsgCh: make(chan transport.AckableMessage),
 		//GameMsgCh:        make(chan transport.AckableMessage),
-		outChan: make(chan transport.AckableMessage),
-		ID:      id,
+		writeChan: make(chan message.Envelope),
+		ID:        id,
 		//TransportBus:     transportBus,
 		//matchmakingClientMsgConsumer: matchmakingClientMsgConsumer,
 		//matchmakingServerMsgProducer: matchmakingServerMsgProducer,
@@ -99,8 +99,8 @@ func (c *Client) WritePump(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case outMsg := <-c.outChan:
-			bytes := outMsg.Payload.([]byte)
+		case outMsg := <-c.writeChan:
+			bytes := outMsg.Payload
 			//case matchmakingMsg := <-c.MatchmakingMsgCh:
 			//	messageId := matchmakingMsg.ID
 			//	outMsg = matchmakingMsg.Payload.([]byte)
@@ -119,7 +119,7 @@ func (c *Client) WritePump(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("failed to write to websocket - %v", err)
 			}
-			err = outMsg.AckFunc(ctx)
+			err = outMsg.Ack(ctx)
 			if err != nil {
 				log.Println("failed to successfully call ACK for outgoing message")
 			}
@@ -184,46 +184,46 @@ func (c *Client) ReadPump(ctx context.Context) error {
 	}
 }
 
-func (c *Client) RouteMessage(msg message.Envelope, ctx context.Context) error {
-	switch msg.Type {
-	case string(message.MatchmakingService):
-		return c.TransportBus.SendMatchmakingServerMessage(ctx, msg.Payload)
-
-	case string(message.GameService):
-		//TODO err = c.m.Send(ctx, rediskeys.GameServerMessageStream, msg.Payload)
-	default:
-		log.Println("unexpected gateway.ServiceType", msg.Type)
-	}
-	return nil
-}
-
-func (c *Client) ListenToServices(ctx context.Context) error {
-	matchmakingMsgCh, matchmakingErrCh := c.TransportBus.StartReceivingMatchmakingClientMessages(ctx)
-
-	eg, gCtx := errgroup.WithContext(ctx)
-
-	eg.Go(func() error {
-		for {
-			select {
-			case <-gCtx.Done():
-				return nil
-			case wrappedMatchmakingMsg, open := <-matchmakingMsgCh:
-				if !open {
-					return nil
-				}
-				c.MatchmakingMsgCh <- wrappedMatchmakingMsg
-			}
-		}
-	})
-
-	eg.Go(func() error {
-		select {
-		case <-gCtx.Done():
-			return nil
-		case err := <-matchmakingErrCh:
-			return err
-		}
-	})
-
-	return eg.Wait()
-}
+//func (c *Client) RouteMessage(msg message.Envelope, ctx context.Context) error {
+//	switch msg.Type {
+//	case string(message.MatchmakingService):
+//		return c.TransportBus.SendMatchmakingServerMessage(ctx, msg.Payload)
+//
+//	case string(message.GameService):
+//		//TODO err = c.m.Send(ctx, rediskeys.GameServerMessageStream, msg.Payload)
+//	default:
+//		log.Println("unexpected gateway.ServiceType", msg.Type)
+//	}
+//	return nil
+//}
+//
+//func (c *Client) ListenToServices(ctx context.Context) error {
+//	matchmakingMsgCh, matchmakingErrCh := c.TransportBus.StartReceivingMatchmakingClientMessages(ctx)
+//
+//	eg, gCtx := errgroup.WithContext(ctx)
+//
+//	eg.Go(func() error {
+//		for {
+//			select {
+//			case <-gCtx.Done():
+//				return nil
+//			case wrappedMatchmakingMsg, open := <-matchmakingMsgCh:
+//				if !open {
+//					return nil
+//				}
+//				c.MatchmakingMsgCh <- wrappedMatchmakingMsg
+//			}
+//		}
+//	})
+//
+//	eg.Go(func() error {
+//		select {
+//		case <-gCtx.Done():
+//			return nil
+//		case err := <-matchmakingErrCh:
+//			return err
+//		}
+//	})
+//
+//	return eg.Wait()
+//}

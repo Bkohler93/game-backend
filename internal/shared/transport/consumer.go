@@ -8,14 +8,53 @@ import (
 	"log"
 	"time"
 
+	"github.com/bkohler93/game-backend/internal/shared/constants/metadata"
 	"github.com/bkohler93/game-backend/internal/shared/utils/files"
 	"github.com/redis/go-redis/v9"
 )
 
+type TransportMessage interface {
+	Ack(context.Context) error
+	GetPayload() any
+	GetMetadata() map[string]interface{}
+}
+
 type AckableMessage struct {
 	AckFunc  func(context.Context) error
 	Payload  any
-	Metadata map[string]string
+	Metadata map[string]interface{}
+}
+
+func (a AckableMessage) Ack(ctx context.Context) error {
+	if a.AckFunc != nil {
+		return a.AckFunc(ctx)
+	}
+	return nil
+}
+
+func (a AckableMessage) GetPayload() any {
+	return a.Payload
+}
+
+func (a AckableMessage) GetMetadata() map[string]interface{} {
+	return a.Metadata
+}
+
+type Message struct {
+	Payload  any
+	Metadata map[string]interface{}
+}
+
+func (m Message) Ack(ctx context.Context) error {
+	return nil
+}
+
+func (m Message) GetPayload() any {
+	return m.Payload
+}
+
+func (m Message) GetMetadata() map[string]interface{} {
+	return m.Metadata
 }
 
 var (
@@ -30,7 +69,73 @@ type MessageGroupConsumer interface {
 
 type MessageConsumerType string
 type MessageConsumer interface {
-	StartReceiving(ctx context.Context) (<-chan AckableMessage, <-chan error)
+	StartReceiving(ctx context.Context) (<-chan Message, <-chan error)
+}
+type MessageConsumerBuilderFunc func(streamSuffix string) MessageConsumer
+
+type RedisMessageConsumer struct {
+	rdb            *redis.Client
+	stream         string
+	lastReceivedID string
+}
+
+func NewRedisMessageConsumer(rdb *redis.Client, stream string) *RedisMessageConsumer {
+	return &RedisMessageConsumer{
+		rdb:            rdb,
+		stream:         stream,
+		lastReceivedID: "$",
+	}
+}
+
+func (r RedisMessageConsumer) StartReceiving(ctx context.Context) (<-chan Message, <-chan error) {
+	msgCh := make(chan Message)
+	errCh := make(chan error, 1)
+	go func() {
+		defer close(msgCh)
+		defer close(errCh)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				streamResults, err := r.rdb.XRead(ctx, &redis.XReadArgs{
+					Streams: []string{r.stream},
+					Count:   1,
+					Block:   0,
+					ID:      r.lastReceivedID,
+				}).Result()
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					errCh <- fmt.Errorf("error reading from RedisMessageConsumer stream - %v", err)
+					return
+				}
+				data, ok := streamResults[0].Messages[0].Values["payload"].(string)
+				if !ok {
+					log.Printf("error trying to structure the stream reply - %v", err)
+				}
+				payload := []byte(data)
+				r.lastReceivedID = streamResults[0].Messages[0].ID
+
+				var metaData map[string]interface{}
+				metaDataString, ok := streamResults[0].Messages[0].Values[metadata.MetaDataKey].(string)
+				if ok {
+					metaDataBytes := []byte(metaDataString)
+					err = json.Unmarshal(metaDataBytes, &metaData)
+					if err != nil {
+						log.Printf("error trying to unmarshal metadata - %v", err)
+					}
+				}
+
+				msgCh <- Message{
+					Payload:  payload,
+					Metadata: metaData,
+				}
+			}
+		}
+	}()
+	return msgCh, errCh
 }
 
 type MessageGroupConsumerBuilderFunc = func(consumerId string) MessageGroupConsumer
@@ -97,7 +202,7 @@ func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan
 					if errors.Is(err, context.Canceled) {
 						return
 					}
-					errCh <- fmt.Errorf("error reading from MatchmakingClientMessage stream - %v", err)
+					errCh <- fmt.Errorf("error reading from RedisMessageGroupConsumer stream - %v", err)
 					return
 				}
 				data, ok := streamResults[0].Messages[0].Values["payload"].(string)
@@ -107,12 +212,14 @@ func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan
 				payload := []byte(data)
 				id := streamResults[0].Messages[0].ID
 
-				metaDataBytes := []byte(streamResults[0].Messages[0].Values["metaData"].(string))
-
-				var metaData map[string]string
-				err = json.Unmarshal(metaDataBytes, &metaData)
-				if err != nil {
-					log.Printf("error trying to unmarshal metadata - %v", err)
+				var metaData map[string]interface{}
+				metaDataString, ok := streamResults[0].Messages[0].Values[metadata.MetaDataKey].(string)
+				if ok {
+					metaDataBytes := []byte(metaDataString)
+					err = json.Unmarshal(metaDataBytes, &metaData)
+					if err != nil {
+						log.Printf("error trying to unmarshal metadata - %v", err)
+					}
 				}
 
 				msgCh <- AckableMessage{

@@ -20,9 +20,9 @@ type Gateway struct {
 	hub            *Hub
 }
 
-func NewGateway(addr string, rr *room.Repository, transportBusFactory *TransportBusFactory) Gateway {
+func NewGateway(addr string, rr *room.Repository, transportFactory *TransportFactory) Gateway {
 	r := &Router{
-		busFactory: transportBusFactory,
+		transportFactory: transportFactory,
 	}
 	return Gateway{
 		//clientTransportBusFactory: clientTransportBusFactory,

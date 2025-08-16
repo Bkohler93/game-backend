@@ -3,6 +3,8 @@ package transport
 import (
 	"context"
 
+	"github.com/bkohler93/game-backend/internal/shared/constants/metadata"
+	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
@@ -47,16 +49,16 @@ func (m *Bus) AddBroadcastProducer(t BroadcastProducerType, producer BroadcastPr
 	genericAdd(&m.broadcastProducers, t, producer)
 }
 
-func (m *Bus) Send(ctx context.Context, t MessageProducerType, data []byte) error {
-	return m.messageProducers[t].Send(ctx, data)
+func (m *Bus) Send(ctx context.Context, t MessageProducerType, msg message.Message, metaData metadata.MetaData) error {
+	return m.messageProducers[t].Send(ctx, msg, metaData)
 }
 
-func (m *Bus) SendTo(ctx context.Context, producerType DynamicMessageProducerType, recipient uuidstring.ID, data []byte) error {
-	return m.dynamicMessageProducers[producerType].SendTo(ctx, recipient, data)
+func (m *Bus) SendTo(ctx context.Context, producerType DynamicMessageProducerType, recipient uuidstring.ID, msg message.Message, metaData metadata.MetaData) error {
+	return m.dynamicMessageProducers[producerType].SendTo(ctx, recipient, msg, metaData)
 }
 
-func (m *Bus) Publish(ctx context.Context, producerType BroadcastProducerType, data []byte) error {
-	return m.broadcastProducers[producerType].Publish(ctx, data)
+func (m *Bus) Publish(ctx context.Context, producerType BroadcastProducerType, msg message.Message) error {
+	return m.broadcastProducers[producerType].Publish(ctx, msg)
 }
 func (m *Bus) StartReceiving(ctx context.Context, consumerType MessageGroupConsumerType) (msgCh <-chan AckableMessage, errCh <-chan error) {
 	return m.messageGroupConsumers[consumerType].StartReceiving(ctx)

@@ -6,12 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+
+	"github.com/bkohler93/game-backend/internal/shared/constants/metadata"
 )
 
 type ServiceType string
 
 const (
 	MatchmakingService ServiceType = "MatchmakingService"
+	SetupService       ServiceType = "SetupService"
 	GameService        ServiceType = "GameService"
 )
 
@@ -23,8 +26,8 @@ type Message interface {
 }
 
 type MetaDataAccessor interface {
-	GetMetaData() map[string]string
-	SetMetaData(map[string]string)
+	RemoveMetaData() metadata.MetaData
+	SetMetaData(data metadata.MetaData)
 }
 
 type Discriminable interface {
@@ -47,6 +50,27 @@ type IDGettable interface {
 
 type IDSettable interface {
 	SetID(string)
+}
+
+type EmptyMessage struct{}
+
+func (e EmptyMessage) GetDiscriminator() string {
+	return ""
+}
+
+func (e EmptyMessage) Ack(ctx context.Context) error {
+	return nil
+}
+
+func (e EmptyMessage) SetAck(f func(context.Context) error) {
+	return
+}
+
+func (e EmptyMessage) GetMetaData() metadata.MetaData {
+	return map[string]string{}
+}
+
+func (e EmptyMessage) SetMetaData(m metadata.MetaData) {
 }
 
 var PrintTypeDiscriminator = func(i any) string {
