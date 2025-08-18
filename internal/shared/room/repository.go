@@ -37,7 +37,14 @@ func (r *Repository) CreateRoom(ctx context.Context, room Room) error {
 }
 
 func (r *Repository) CreateRoomIndex(ctx context.Context) error {
-	return r.store.CreateRoomIndex(ctx)
+	err := r.store.CreateRoomIndex(ctx)
+	if err != nil {
+		if errors.Is(err, ErrIndexAlreadyExists) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *Repository) GetRoom(ctx context.Context, roomID uuidstring.ID) (Room, error) {

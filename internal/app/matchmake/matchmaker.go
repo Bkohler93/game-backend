@@ -57,6 +57,7 @@ func (m *Matchmaker) Start(ctx context.Context) {
 }
 
 func (m *Matchmaker) processMatchmakingRequest(ctx context.Context, req *RequestMatchmakingMessage) error {
+	fmt.Println("processing matchmaking request - ", req)
 	rm := room.Room{
 		RoomId:            uuidstring.NewID(),
 		PlayerCount:       1,
@@ -134,7 +135,7 @@ func (m *Matchmaker) runMatchmakingLoop(ctx context.Context, workerOffset int) e
 
 		case alert := <-alertCh:
 			idleCount = 0
-			if alert != "" {
+			if alert.Type != "" {
 				log.Println("received unknown alert from notify matchmake workers channel,", alert)
 				continue
 			}
@@ -174,7 +175,7 @@ func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 					return nil
 				}
 				var err error
-				switch msg := matchmakingMsg.(type) {
+				switch msg := matchmakingMsg.Msg.(type) {
 				case *ExitMatchmakingMessage:
 					err = m.processExitMatchmakingRequest(gCtx, msg) //errors received from this are breaking
 					if err != nil {
@@ -189,7 +190,7 @@ func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 				//TODO maybe handle breaking errors that should cancel anymore message processing (any failures to interact with redis db.
 				//TODO 	otherwise should just continue reading from the server message stream
 				if err == nil {
-					err = matchmakingMsg.Ack(gCtx)
+					err = matchmakingMsg.AckFunc(gCtx)
 					//err = m.TransportBus.AckServerMessage(gCtx, matchmakingMsg.GetID())
 				}
 				if err != nil {

@@ -1,8 +1,6 @@
 package matchmake
 
 import (
-	"context"
-
 	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
@@ -48,34 +46,29 @@ const (
 
 type RoomFullMessage struct {
 	TypeDiscriminator string        `json:"$type"`
-	ID                string        `json:"ID"`
 	RoomID            uuidstring.ID `json:"room_id"`
 	PlayerCount       int           `json:"player_count"`
-
-	ack      func(context.Context) error `json:"-"`
-	metaData map[string]interface{}      `json:"-"`
 }
 
-func (r *RoomFullMessage) GetMetaData() map[string]interface{} {
-	return r.metaData
-}
-
-func (r *RoomFullMessage) SetMetaData(m map[string]interface{}) {
-	r.metaData = m
-}
-
-func (r *RoomFullMessage) Ack(ctx context.Context) error {
-	return r.ack(ctx)
-}
-
-func (r *RoomFullMessage) SetAck(f func(context.Context) error) {
-	r.ack = f
-}
+//func (r *RoomFullMessage) GetMetaData() map[string]interface{} {
+//	return r.metaData
+//}
+//
+//func (r *RoomFullMessage) SetMetaData(m map[string]interface{}) {
+//	r.metaData = m
+//}
+//
+//func (r *RoomFullMessage) Ack(ctx context.Context) error {
+//	return r.ack(ctx)
+//}
+//
+//func (r *RoomFullMessage) SetAck(f func(context.Context) error) {
+//	r.ack = f
+//}
 
 func NewRoomFullMessage(roomID uuidstring.ID, playerCount int) *RoomFullMessage {
 	return &RoomFullMessage{
 		TypeDiscriminator: string(RoomFull),
-		ID:                "",
 		RoomID:            roomID,
 		PlayerCount:       playerCount,
 	}
@@ -85,38 +78,34 @@ func (r *RoomFullMessage) GetDiscriminator() string {
 	return r.TypeDiscriminator
 }
 
-func (r *RoomFullMessage) GetID() string {
-	return r.ID
-}
-
-func (r *RoomFullMessage) SetID(s string) {
-	r.ID = s
-}
+//func (r *RoomFullMessage) GetID() string {
+//	return r.ID
+//}
+//
+//func (r *RoomFullMessage) SetID(s string) {
+//	r.ID = s
+//}
 
 type PlayerLeftRoomMessage struct {
-	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	UserLeftId        uuidstring.ID `json:"user_left_id"`
-
-	ack      func(context.Context) error `json:"-"`
-	metaData map[string]interface{}      `json:"-"`
 }
 
-func (p *PlayerLeftRoomMessage) GetMetaData() map[string]interface{} {
-	return p.metaData
-}
-
-func (p *PlayerLeftRoomMessage) SetMetaData(m map[string]interface{}) {
-	p.metaData = m
-}
-
-func (p *PlayerLeftRoomMessage) Ack(ctx context.Context) error {
-	return p.ack(ctx)
-}
-
-func (p *PlayerLeftRoomMessage) SetAck(f func(context.Context) error) {
-	p.ack = f
-}
+//func (p *PlayerLeftRoomMessage) GetMetaData() map[string]interface{} {
+//	return p.metaData
+//}
+//
+//func (p *PlayerLeftRoomMessage) SetMetaData(m map[string]interface{}) {
+//	p.metaData = m
+//}
+//
+//func (p *PlayerLeftRoomMessage) Ack(ctx context.Context) error {
+//	return p.ack(ctx)
+//}
+//
+//func (p *PlayerLeftRoomMessage) SetAck(f func(context.Context) error) {
+//	p.ack = f
+//}
 
 //func (p *PlayerLeftRoomMessage) GetID() string {
 //	return p.ID
@@ -138,29 +127,25 @@ func NewPlayerLeftRoomMessage(userLeftId uuidstring.ID) PlayerLeftRoomMessage {
 }
 
 type PlayerJoinedRoomMessage struct {
-	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	UserJoinedId      uuidstring.ID `json:"user_joined_id"`
-
-	ack      func(context.Context) error `json:"-"`
-	metaData map[string]interface{}      `json:"-"`
 }
 
-func (p *PlayerJoinedRoomMessage) GetMetaData() map[string]interface{} {
-	return p.metaData
-}
-
-func (p *PlayerJoinedRoomMessage) SetMetaData(m map[string]interface{}) {
-	p.metaData = m
-}
-
-func (p *PlayerJoinedRoomMessage) Ack(ctx context.Context) error {
-	return p.ack(ctx)
-}
-
-func (p *PlayerJoinedRoomMessage) SetAck(f func(context.Context) error) {
-	p.ack = f
-}
+//func (p *PlayerJoinedRoomMessage) GetMetaData() map[string]interface{} {
+//	return p.metaData
+//}
+//
+//func (p *PlayerJoinedRoomMessage) SetMetaData(m map[string]interface{}) {
+//	p.metaData = m
+//}
+//
+//func (p *PlayerJoinedRoomMessage) Ack(ctx context.Context) error {
+//	return p.ack(ctx)
+//}
+//
+//func (p *PlayerJoinedRoomMessage) SetAck(f func(context.Context) error) {
+//	p.ack = f
+//}
 
 //func (p *PlayerJoinedRoomMessage) GetID() string {
 //	return p.ID
@@ -182,31 +167,27 @@ func NewPlayerJoinedRoomMessage(userJoinedId uuidstring.ID) *PlayerJoinedRoomMes
 }
 
 type RoomChangedMessage struct {
-	MetaData          map[string]interface{} `json:"meta_data"`
-	ID                string                 `json:"ID"`
-	TypeDiscriminator string                 `json:"$type"`
-	NewRoomId         uuidstring.ID          `json:"new_room_id"`
-	PlayerCount       int                    `json:"player_count"`
-	AvgSkill          int                    `json:"avg_skill"`
-
-	ack func(context.Context) error `json:"-"`
+	TypeDiscriminator string        `json:"$type"`
+	NewRoomId         uuidstring.ID `json:"new_room_id"`
+	PlayerCount       int           `json:"player_count"`
+	AvgSkill          int           `json:"avg_skill"`
 }
 
-func (r *RoomChangedMessage) GetMetaData() map[string]interface{} {
-	return r.MetaData
-}
-
-func (r *RoomChangedMessage) SetMetaData(m map[string]interface{}) {
-	r.MetaData = m
-}
-
-func (r *RoomChangedMessage) Ack(ctx context.Context) error {
-	return r.ack(ctx)
-}
-
-func (r *RoomChangedMessage) SetAck(f func(context.Context) error) {
-	r.ack = f
-}
+//func (r *RoomChangedMessage) GetMetaData() map[string]interface{} {
+//	return r.MetaData
+//}
+//
+//func (r *RoomChangedMessage) SetMetaData(m map[string]interface{}) {
+//	r.MetaData = m
+//}
+//
+//func (r *RoomChangedMessage) Ack(ctx context.Context) error {
+//	return r.ack(ctx)
+//}
+//
+//func (r *RoomChangedMessage) SetAck(f func(context.Context) error) {
+//	r.ack = f
+//}
 
 //func (r *RoomChangedMessage) GetID() string {
 //	return r.ID
@@ -266,33 +247,29 @@ const (
 )
 
 type RequestMatchmakingMessage struct {
-	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	UserId            uuidstring.ID `redis:"user_id" json:"user_id"`
 	Name              string        `redis:"name" json:"name"`
 	TimeCreated       int64         `redis:"time_created" json:"time_created"` //TODO remove this? The Room object will contain a Retry count
 	Skill             int           `redis:"skill" json:"skill"`
 	Region            string        `redis:"region" json:"region"`
-
-	ack      func(context.Context) error `json:"-" redis:"-"`
-	metaData map[string]interface{}      `json:"-"`
 }
 
-func (m *RequestMatchmakingMessage) GetMetaData() map[string]interface{} {
-	return m.metaData
-}
-
-func (m *RequestMatchmakingMessage) SetMetaData(md map[string]interface{}) {
-	m.metaData = md
-}
-
-func (m *RequestMatchmakingMessage) Ack(ctx context.Context) error {
-	return m.ack(ctx)
-}
-
-func (m *RequestMatchmakingMessage) SetAck(f func(context.Context) error) {
-	m.ack = f
-}
+//func (m *RequestMatchmakingMessage) GetMetaData() map[string]interface{} {
+//	return m.metaData
+//}
+//
+//func (m *RequestMatchmakingMessage) SetMetaData(md map[string]interface{}) {
+//	m.metaData = md
+//}
+//
+//func (m *RequestMatchmakingMessage) Ack(ctx context.Context) error {
+//	return m.ack(ctx)
+//}
+//
+//func (m *RequestMatchmakingMessage) SetAck(f func(context.Context) error) {
+//	m.ack = f
+//}
 
 //func (m *RequestMatchmakingMessage) GetID() string {
 //	return m.ID
@@ -322,30 +299,26 @@ func NewRequestMatchmakingMessage(userId uuidstring.ID, name string, timeCreated
 }
 
 type ExitMatchmakingMessage struct {
-	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	UserId            uuidstring.ID `json:"user_id"`
 	UserSkill         int           `json:"user_skill"`
-
-	ack      func(context.Context) error `json:"-"`
-	MetaData map[string]interface{}      `json:"-"`
 }
 
-func (m *ExitMatchmakingMessage) GetMetaData() map[string]interface{} {
-	return m.MetaData
-}
-
-func (m *ExitMatchmakingMessage) SetMetaData(md map[string]interface{}) {
-	m.MetaData = md
-}
-
-func (m *ExitMatchmakingMessage) Ack(ctx context.Context) error {
-	return m.ack(ctx)
-}
-
-func (m *ExitMatchmakingMessage) SetAck(f func(context.Context) error) {
-	m.ack = f
-}
+//func (m *ExitMatchmakingMessage) GetMetaData() map[string]interface{} {
+//	return m.MetaData
+//}
+//
+//func (m *ExitMatchmakingMessage) SetMetaData(md map[string]interface{}) {
+//	m.MetaData = md
+//}
+//
+//func (m *ExitMatchmakingMessage) Ack(ctx context.Context) error {
+//	return m.ack(ctx)
+//}
+//
+//func (m *ExitMatchmakingMessage) SetAck(f func(context.Context) error) {
+//	m.ack = f
+//}
 
 //func (m *ExitMatchmakingMessage) GetID() string {
 //	return m.ID

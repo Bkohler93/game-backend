@@ -8,16 +8,16 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/message"
 )
 
-func UnwrapAndForward[T message.Message](ctx context.Context, wrappedMsgCh <-chan AckableMessage, errCh <-chan error, messageTypeConstructorRegistry map[string]func() T) (<-chan T, <-chan error) {
-	msgCh := make(chan T)
+func UnwrapAndForward[T message.Message](ctx context.Context, envelopeCh <-chan *message.EnvelopeContext, errCh <-chan error, messageTypeConstructorRegistry map[string]func() T) (<-chan *message.MessageContext, <-chan error) {
+	msgCh := make(chan *message.MessageContext)
 	go func() {
 		for {
 			select {
-			case wrappedMsg, open := <-wrappedMsgCh:
+			case envelope, open := <-envelopeCh:
 				if !open {
 					return
 				}
-				bytes := wrappedMsg.Payload.([]byte)
+				bytes := envelope.Env.Payload
 
 				msg, err := message.UnmarshalWrappedType[T](bytes, messageTypeConstructorRegistry)
 				if err != nil {
@@ -25,12 +25,12 @@ func UnwrapAndForward[T message.Message](ctx context.Context, wrappedMsgCh <-cha
 					continue
 				}
 
-				//TODO trying out using AckFunc instead of constructing it using the ID later, keeps ID from being passed to client
-				msg.SetAck(wrappedMsg.AckFunc)
-				msg.SetMetaData(wrappedMsg.Metadata)
-				//msg.SetID(wrappedMsg.ID)
+				msgContext := &message.MessageContext{
+					Msg:     msg,
+					AckFunc: envelope.AckFunc,
+				}
 
-				msgCh <- msg
+				msgCh <- msgContext
 			case err := <-errCh:
 				fmt.Println(err)
 			case <-ctx.Done():

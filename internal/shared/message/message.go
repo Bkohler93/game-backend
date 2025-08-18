@@ -18,16 +18,30 @@ const (
 	GameService        ServiceType = "GameService"
 )
 
+type EnvelopeContext struct {
+	Env     *Envelope
+	AckFunc func(ctx context.Context) error
+}
+
+func NewNoAckEnvelopeContext(e *Envelope) *EnvelopeContext {
+	return &EnvelopeContext{
+		Env: e,
+		AckFunc: func(ctx context.Context) error {
+			return nil
+		},
+	}
+}
+
+type MessageContext struct {
+	Msg     Message
+	AckFunc func(ctx context.Context) error
+}
+
 type Message interface {
 	Discriminable
 	//Identifiable
-	AckFuncAccessor
-	MetaDataAccessor
-}
-
-type MetaDataAccessor interface {
-	RemoveMetaData() metadata.MetaData
-	SetMetaData(data metadata.MetaData)
+	//AckFuncAccessor
+	//MetaDataAccessor
 }
 
 type Discriminable interface {
@@ -77,7 +91,7 @@ var PrintTypeDiscriminator = func(i any) string {
 	return reflect.TypeOf(i).String()
 }
 
-func UnmarshalWrappedType[T Discriminable](data []byte, typeRegistry map[string]func() T) (T, error) {
+func UnmarshalWrappedType[T Message](data []byte, typeRegistry map[string]func() T) (T, error) {
 	var zeroValue T
 	var temp struct {
 		TypeDiscriminator string `json:"$type"`
@@ -98,8 +112,15 @@ func UnmarshalWrappedType[T Discriminable](data []byte, typeRegistry map[string]
 }
 
 type Envelope struct {
-	Type    string          `json:"type"`
-	Payload json.RawMessage `json:"payload"` // json.RawMessage holds the raw JSON bytes
+	Type     string            `json:"type"`
+	Payload  json.RawMessage   `json:"payload"` // json.RawMessage holds the raw JSON bytes
+	MetaData metadata.MetaData `json:"metadata"`
+}
+
+func (e *Envelope) EnsureMetaData() {
+	if e.MetaData == nil {
+		e.MetaData = make(metadata.MetaData)
+	}
 }
 
 func NewEnvelopeOf[T ~string](msgType T, Payload json.RawMessage) Envelope {

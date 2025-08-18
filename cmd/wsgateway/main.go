@@ -36,7 +36,7 @@ func main() {
 	}
 
 	transportFactory := &gateway.TransportFactory{
-		MatchmakingClientMsgConsumerBuilder: func(clientId string) transport.MessageGroupConsumer {
+		MatchmakingClientMsgConsumerBuilder: func(clientId string) transport.MessageConsumer {
 			stream := rediskeys.MatchmakingClientMessageStream(uuidstring.ID(clientId))
 			consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
 			consumer, err := transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, clientId)

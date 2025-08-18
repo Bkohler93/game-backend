@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/shared/message"
-	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/gorilla/websocket"
 )
@@ -23,10 +22,10 @@ type Client struct {
 	Conn *websocket.Conn
 	//MatchmakingMsgCh chan transport.AckableMessage
 	//GameMsgCh        chan transport.AckableMessage
-	writeChan chan message.Envelope
+	writeChan chan *message.EnvelopeContext
 	ID        uuidstring.ID
 	RoomID    uuidstring.ID
-	routeChan chan message.Envelope
+	routeChan chan *message.EnvelopeContext
 
 	//TransportBus     *TransportBus
 }
@@ -57,13 +56,14 @@ func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request) (*Cl
 	//transportBus := transportBusFactory.NewClientTransportBus(id)
 
 	//TODO this is temporary until we figure out where the id comes from
-	conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("id=%s", id)))
+	conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("%s", id)))
 
 	c = &Client{
 		Conn: conn,
 		//MatchmakingMsgCh: make(chan transport.AckableMessage),
 		//GameMsgCh:        make(chan transport.AckableMessage),
-		writeChan: make(chan message.Envelope),
+		writeChan: make(chan *message.EnvelopeContext),
+		routeChan: make(chan *message.EnvelopeContext),
 		ID:        id,
 		//TransportBus:     transportBus,
 		//matchmakingClientMsgConsumer: matchmakingClientMsgConsumer,
@@ -100,7 +100,8 @@ func (c *Client) WritePump(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case outMsg := <-c.writeChan:
-			bytes := outMsg.Payload
+			bytes := outMsg.Env.Payload
+			//bytes := outMsg.Payload
 			//case matchmakingMsg := <-c.MatchmakingMsgCh:
 			//	messageId := matchmakingMsg.ID
 			//	outMsg = matchmakingMsg.Payload.([]byte)
@@ -119,7 +120,7 @@ func (c *Client) WritePump(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("failed to write to websocket - %v", err)
 			}
-			err = outMsg.Ack(ctx)
+			err = outMsg.AckFunc(ctx)
 			if err != nil {
 				log.Println("failed to successfully call ACK for outgoing message")
 			}
@@ -170,13 +171,15 @@ func (c *Client) ReadPump(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			var envelope message.Envelope
+			var envelope *message.Envelope
 			err := json.Unmarshal(bytes, &envelope)
 			if err != nil {
 				log.Printf("client %s: failed to unmarshal message: %v\n", c.ID, err)
 				continue
 			}
-			c.routeChan <- envelope
+
+			msgContext := message.NewNoAckEnvelopeContext(envelope)
+			c.routeChan <- msgContext
 			//if err = c.RouteMessage(envelope, ctx); err != nil {
 			//	log.Printf("routing message failed - %v\n", err)
 			//}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/bkohler93/game-backend/internal/app/gateway"
 	"github.com/bkohler93/game-backend/internal/app/matchmake"
 	"github.com/bkohler93/game-backend/internal/shared/constants/metadata"
+	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
@@ -51,7 +53,7 @@ func createFlushFunc(cancel context.CancelFunc, wg *sync.WaitGroup, rdb *redis.C
 func TestRedisMatchmakingClientMessageConsumerAndProducer(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var userId uuidstring.ID
-	startup := func(t *testing.T) (consumer transport.MessageGroupConsumer, producer transport.DynamicMessageProducer, flush func()) {
+	startup := func(t *testing.T) (consumer transport.MessageConsumer, producer transport.DynamicMessageProducer, flush func()) {
 		client, err := redisutils.NewRedisMatchmakeClient(ctx)
 		if err != nil {
 			panic(err)
@@ -89,7 +91,11 @@ func TestRedisMatchmakingClientMessageConsumerAndProducer(t *testing.T) {
 				t.Errorf("error marshalling message - %v", err)
 			}
 
-			err = producer.SendTo(ctx, userId, bytes, nil)
+			err = producer.SendTo(ctx, userId, &message.Envelope{
+				Type:     payload.GetDiscriminator(),
+				Payload:  bytes,
+				MetaData: nil,
+			})
 			if err != nil {
 				t.Errorf("unexpected error trying to publish msg - %v", err)
 			}
@@ -110,7 +116,9 @@ func TestRedisMatchmakingClientMessageConsumerAndProducer(t *testing.T) {
 				case msgErr := <-matchmakingMsgErrCh:
 					t.Errorf("error while consuming from MatchmakingClientMessage stream - %v", msgErr)
 				case msg := <-matchmakingClientMsgCh:
-					payload := msg.Payload.([]byte)
+					fmt.Printf("received msg - %v\n", msg)
+					payload := msg.Env.Payload
+					fmt.Printf("payload - %v\n", payload)
 					mmMsg, err := matchmake.UnmarshalMatchmakingClientMessage(payload)
 					if err != nil {
 						t.Errorf("encountered error trying to unmarshal msg recieved by consumer - %v", err)
@@ -119,6 +127,7 @@ func TestRedisMatchmakingClientMessageConsumerAndProducer(t *testing.T) {
 					if !ok {
 						t.Errorf("expected a PlayerJoinedRoomMessage, got %v", reflect.TypeOf(mmMsg))
 					}
+					fmt.Println("playerJoinedRoomMsg", playerJoinedRoomMsg)
 					if !slices.Contains(userIds, playerJoinedRoomMsg.UserJoinedId) {
 						t.Errorf("consumer received unknown player id %s", playerJoinedRoomMsg.UserJoinedId)
 					}
@@ -142,10 +151,11 @@ func TestRedisMatchmakingClientMessageConsumerAndProducer(t *testing.T) {
 }
 
 func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
 	var serverId uuidstring.ID
-	startup := func(t *testing.T) (consumer transport.MessageGroupConsumer, producer transport.MessageProducer, flush func()) {
+	startup := func(t *testing.T) (ctx context.Context, consumer transport.MessageConsumer, producer transport.MessageProducer, flush func()) {
+		ctx, cancel := context.WithCancel(t.Context())
 		client, err := redisutils.NewRedisMatchmakeClient(ctx)
+		fmt.Println("creating RedisMatchmakeClient")
 		if err != nil {
 			panic(err)
 		}
@@ -166,7 +176,7 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 	}
 
 	t.Run("producer sends messages and consumer receives them", func(t *testing.T) {
-		consumer, producer, flush := startup(t)
+		ctx, consumer, producer, flush := startup(t)
 		defer flush()
 
 		name := "ButtholeSmeller"
@@ -185,7 +195,11 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 				t.Errorf("error trying to marshal payload - %v", err)
 			}
 
-			err = producer.Send(ctx, bytes, nil)
+			err = producer.Send(ctx, &message.Envelope{
+				Type:     payload.TypeDiscriminator,
+				Payload:  bytes,
+				MetaData: nil,
+			})
 			if err != nil {
 				t.Errorf("unexpected error trying to publish msg - %v", err)
 			}
@@ -206,8 +220,8 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 				case msgErr := <-matchmakingServerErrCh:
 					t.Errorf("error while consuming from MatchmakingClientMessage stream - %v", msgErr)
 				case msg := <-matchmakingServerMsgCh:
-					payload := msg.Payload
-					mmMsg, err := matchmake.UnmarshalMatchmakingServerMessage(payload.([]byte))
+					payload := msg.Env.Payload
+					mmMsg, err := matchmake.UnmarshalMatchmakingServerMessage(payload)
 					if err != nil {
 						t.Errorf("encountered error trying to unmarshal msg recieved by consumer - %v", err)
 					}
@@ -239,8 +253,11 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 	})
 
 	t.Run("producer sends metadata and consumer recieves it", func(t *testing.T) {
-		consumer, producer, flush := startup(t)
-		defer flush()
+		ctx, consumer, producer, flush := startup(t)
+		defer func() {
+			fmt.Println("calling flush")
+			flush()
+		}()
 
 		name := "ButtholeSmeller"
 		timeCreated := time.Now().Unix()
@@ -258,12 +275,16 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 				t.Errorf("error trying to marshal payload - %v", err)
 			}
 
-			metaData := map[string]interface{}{
+			metaData := map[string]string{
 				metadata.NewGameState: metadata.Setup,
 				metadata.RoomID:       newId.String(),
 			}
 
-			err = producer.Send(ctx, bytes, metaData)
+			err = producer.Send(ctx, &message.Envelope{
+				Type:     payload.TypeDiscriminator,
+				Payload:  bytes,
+				MetaData: metaData,
+			})
 			if err != nil {
 				t.Errorf("unexpected error trying to publish msg - %v", err)
 			}
@@ -284,7 +305,7 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 				case msgErr := <-matchmakingServerErrCh:
 					t.Errorf("error while consuming from MatchmakingClientMessage stream - %v", msgErr)
 				case msg := <-matchmakingServerMsgCh:
-					metaData := msg.GetMetadata()
+					metaData := msg.Env.MetaData
 					if metaData[metadata.RoomID] != newId.String() {
 						t.Errorf("expected room ID in metadata to be %s got %s", newId.String(), metaData[metadata.RoomID])
 					}

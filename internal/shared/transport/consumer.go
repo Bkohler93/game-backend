@@ -8,68 +8,62 @@ import (
 	"log"
 	"time"
 
-	"github.com/bkohler93/game-backend/internal/shared/constants/metadata"
+	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/internal/shared/utils/files"
 	"github.com/redis/go-redis/v9"
 )
 
-type TransportMessage interface {
-	Ack(context.Context) error
-	GetPayload() any
-	GetMetadata() map[string]interface{}
-}
+//type TransportMessage interface {
+//	Ack(context.Context) error
+//	GetPayload() any
+//	GetMetadata() map[string]interface{}
+//}
 
-type AckableMessage struct {
-	AckFunc  func(context.Context) error
-	Payload  any
-	Metadata map[string]interface{}
-}
+//type AckableMessage struct {
+//	AckFunc  func(context.Context) error
+//	Payload  any
+//	Metadata map[string]interface{}
+//}
 
-func (a AckableMessage) Ack(ctx context.Context) error {
-	if a.AckFunc != nil {
-		return a.AckFunc(ctx)
-	}
-	return nil
-}
+//func (a AckableMessage) Ack(ctx context.Context) error {
+//	if a.AckFunc != nil {
+//		return a.AckFunc(ctx)
+//	}
+//	return nil
+//}
+//
+//func (a AckableMessage) GetPayload() any {
+//	return a.Payload
+//}
+//
+//func (a AckableMessage) GetMetadata() map[string]interface{} {
+//	return a.Metadata
+//}
 
-func (a AckableMessage) GetPayload() any {
-	return a.Payload
-}
+//type Message struct {
+//	Payload  any
+//	Metadata map[string]interface{}
+//}
 
-func (a AckableMessage) GetMetadata() map[string]interface{} {
-	return a.Metadata
-}
-
-type Message struct {
-	Payload  any
-	Metadata map[string]interface{}
-}
-
-func (m Message) Ack(ctx context.Context) error {
-	return nil
-}
-
-func (m Message) GetPayload() any {
-	return m.Payload
-}
-
-func (m Message) GetMetadata() map[string]interface{} {
-	return m.Metadata
-}
+//func (m Message) Ack(ctx context.Context) error {
+//	return nil
+//}
+//
+//func (m Message) GetPayload() any {
+//	return m.Payload
+//}
+//
+//func (m Message) GetMetadata() map[string]interface{} {
+//	return m.Metadata
+//}
 
 var (
 	ErrScriptNotFound = errors.New("script not found")
 )
 
-type MessageGroupConsumerType string
-type MessageGroupConsumer interface {
-	StartReceiving(ctx context.Context) (<-chan AckableMessage, <-chan error)
-	AckMessage(ctx context.Context, msgId string) error
-}
-
 type MessageConsumerType string
 type MessageConsumer interface {
-	StartReceiving(ctx context.Context) (<-chan Message, <-chan error)
+	StartReceiving(ctx context.Context) (<-chan *message.EnvelopeContext, <-chan error)
 }
 type MessageConsumerBuilderFunc func(streamSuffix string) MessageConsumer
 
@@ -87,8 +81,8 @@ func NewRedisMessageConsumer(rdb *redis.Client, stream string) *RedisMessageCons
 	}
 }
 
-func (r RedisMessageConsumer) StartReceiving(ctx context.Context) (<-chan Message, <-chan error) {
-	msgCh := make(chan Message)
+func (r RedisMessageConsumer) StartReceiving(ctx context.Context) (<-chan *message.EnvelopeContext, <-chan error) {
+	msgCh := make(chan *message.EnvelopeContext)
 	errCh := make(chan error, 1)
 	go func() {
 		defer close(msgCh)
@@ -118,19 +112,18 @@ func (r RedisMessageConsumer) StartReceiving(ctx context.Context) (<-chan Messag
 				payload := []byte(data)
 				r.lastReceivedID = streamResults[0].Messages[0].ID
 
-				var metaData map[string]interface{}
-				metaDataString, ok := streamResults[0].Messages[0].Values[metadata.MetaDataKey].(string)
-				if ok {
-					metaDataBytes := []byte(metaDataString)
-					err = json.Unmarshal(metaDataBytes, &metaData)
-					if err != nil {
-						log.Printf("error trying to unmarshal metadata - %v", err)
-					}
+				var env *message.Envelope
+
+				err = json.Unmarshal(payload, &env)
+				if err != nil {
+					log.Printf("error trying to unmarshal envelope - %v", err)
 				}
 
-				msgCh <- Message{
-					Payload:  payload,
-					Metadata: metaData,
+				msgCh <- &message.EnvelopeContext{
+					Env: env,
+					AckFunc: func(ctx context.Context) error {
+						return nil
+					},
 				}
 			}
 		}
@@ -138,14 +131,14 @@ func (r RedisMessageConsumer) StartReceiving(ctx context.Context) (<-chan Messag
 	return msgCh, errCh
 }
 
-type MessageGroupConsumerBuilderFunc = func(consumerId string) MessageGroupConsumer
-type MessageGroupConsumerFactory interface {
-	CreateGroupConsumer(ctx context.Context, consumer string) (MessageGroupConsumer, error)
+type MessageGroupConsumerBuilderFunc = func(consumerId string) MessageConsumer
+type MessageConsumerFactory interface {
+	CreateConsumer(ctx context.Context, consumer string) (MessageConsumer, error)
 }
 
 type BroadcastConsumerType string
 type BroadcastConsumer interface {
-	Subscribe(ctx context.Context) (<-chan any, <-chan error)
+	Subscribe(ctx context.Context) (<-chan *message.Envelope, <-chan error)
 }
 
 type RedisMessageGroupConsumer struct {
@@ -180,8 +173,8 @@ func NewRedisMessageGroupConsumer(ctx context.Context, rdb *redis.Client, stream
 	return r, err
 }
 
-func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan AckableMessage, <-chan error) {
-	msgCh := make(chan AckableMessage)
+func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan *message.EnvelopeContext, <-chan error) {
+	msgCh := make(chan *message.EnvelopeContext)
 	errCh := make(chan error, 1)
 	go func() {
 		defer close(msgCh)
@@ -212,23 +205,20 @@ func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan
 				payload := []byte(data)
 				id := streamResults[0].Messages[0].ID
 
-				var metaData map[string]interface{}
-				metaDataString, ok := streamResults[0].Messages[0].Values[metadata.MetaDataKey].(string)
-				if ok {
-					metaDataBytes := []byte(metaDataString)
-					err = json.Unmarshal(metaDataBytes, &metaData)
-					if err != nil {
-						log.Printf("error trying to unmarshal metadata - %v", err)
-					}
-				}
+				var env *message.Envelope
 
-				msgCh <- AckableMessage{
-					AckFunc: func(ackCtx context.Context) error {
-						return mc.AckMessage(ackCtx, id)
+				err = json.Unmarshal(payload, &env)
+				if err != nil {
+					log.Printf("error trying to unmarshal envelope - %v", err)
+				}
+				env.EnsureMetaData()
+				env.MetaData["msg_id"] = id
+
+				msgCh <- &message.EnvelopeContext{
+					Env: env,
+					AckFunc: func(ctx context.Context) error {
+						return nil
 					},
-					//ID:      id,
-					Payload:  payload,
-					Metadata: metaData,
 				}
 			}
 		}
@@ -248,8 +238,8 @@ type RedisBroadcastConsumer struct {
 	channel string
 }
 
-func (r *RedisBroadcastConsumer) Subscribe(ctx context.Context) (<-chan any, <-chan error) {
-	returnCh := make(chan any)
+func (r *RedisBroadcastConsumer) Subscribe(ctx context.Context) (<-chan *message.Envelope, <-chan error) {
+	returnCh := make(chan *message.Envelope)
 	errCh := make(chan error)
 
 	receiveCh := r.rdb.Subscribe(ctx, r.channel).Channel()
@@ -258,7 +248,12 @@ func (r *RedisBroadcastConsumer) Subscribe(ctx context.Context) (<-chan any, <-c
 			select {
 			case msg := <-receiveCh:
 				payload := msg.Payload
-				returnCh <- payload
+				var env *message.Envelope
+				err := json.Unmarshal([]byte(payload), &env)
+				if err != nil {
+					log.Printf("failed to unmarshal broadcast into envelope - %v\n", err)
+				}
+				returnCh <- env
 			case <-ctx.Done():
 				errCh <- ctx.Err()
 			}

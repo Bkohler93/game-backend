@@ -17,8 +17,9 @@ import (
 )
 
 var (
-	ErrDidNotUnlock = errors.New("failed to unlock room")
-	ErrDidNotLock   = errors.New("failed to lock room")
+	ErrDidNotUnlock       = errors.New("failed to unlock room")
+	ErrDidNotLock         = errors.New("failed to lock room")
+	ErrIndexAlreadyExists = errors.New("index already exists")
 )
 
 type Store interface {
@@ -165,7 +166,7 @@ func (store *RedisStore) CreateRoomIndex(ctx context.Context) error {
 	}
 
 	if slices.Contains(indices, RedisRoomIndex) {
-		return errors.New("index already exists")
+		return ErrIndexAlreadyExists
 	}
 
 	return store.rdb.FTCreate(
