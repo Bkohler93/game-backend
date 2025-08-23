@@ -60,7 +60,6 @@ func (b *TransportBus) ListenForMatchmakeWorkerNotifications(ctx context.Context
 }
 
 func (b *TransportBus) NotifyMatchmakeWorkers(ctx context.Context) error {
-	//return b.transportBus.Publish(ctx, MatchmakeWorkerNotifier, message.EmptyMessage{})
 	return b.transportBus.Publish(ctx, MatchmakeWorkerNotifier, &message.Envelope{
 		Type:     "",
 		Payload:  nil,
@@ -77,12 +76,12 @@ func (b *TransportBus) SendToClient(ctx context.Context, id uuidstring.ID, msg M
 	if msg.GetDiscriminator() == string(RoomFull) {
 		roomFullMsg := msg.(*RoomFullMessage)
 		md = make(metadata.MetaData)
-		md[metadata.NewGameState] = metadata.Setup
+		md[metadata.TransitionTo] = metadata.Game
 		md[metadata.RoomID] = roomFullMsg.RoomID.String()
 	}
 
 	return b.transportBus.SendTo(ctx, ClientMessageProducer, id, &message.Envelope{
-		Type:     msg.GetDiscriminator(),
+		Type:     message.MatchmakingService,
 		Payload:  bytes,
 		MetaData: md,
 	})

@@ -8,7 +8,6 @@ import (
 )
 
 type Bus struct {
-	//messageGroupConsumers map[MessageGroupConsumerType]MessageGroupConsumer
 	broadcastConsumers map[BroadcastConsumerType]BroadcastConsumer
 	messageConsumers   map[MessageConsumerType]MessageConsumer
 

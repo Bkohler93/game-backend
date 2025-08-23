@@ -17,8 +17,8 @@ const (
 )
 
 var (
-	NoPendingTasksAvailableErr = errors.New("no available task in pending set")
-	UnexpectedRedisResultErr   = errors.New("unexpected redis result type")
+	ErrNoTasksAvailable      = errors.New("no available task in pending set")
+	ErrUnexpectedRedisResult = errors.New("unexpected redis result type")
 )
 
 type RedisMatchmakingTaskStore struct {
@@ -118,14 +118,14 @@ func (r *RedisMatchmakingTaskStore) ClaimPendingTask(ctx context.Context) (uuids
 	).Result()
 	if err != nil {
 		if err.Error() == "NO_AVAILABLE_TASK" {
-			return "", NoPendingTasksAvailableErr
+			return "", ErrNoTasksAvailable
 		}
 		return "", err
 	}
 
 	taskID, ok := res.(string)
 	if !ok {
-		return "", UnexpectedRedisResultErr
+		return "", ErrUnexpectedRedisResult
 	}
 	return uuidstring.ID(taskID), nil
 }

@@ -39,7 +39,7 @@ func (r *Repository) CreateRoom(ctx context.Context, room Room) error {
 func (r *Repository) CreateRoomIndex(ctx context.Context) error {
 	err := r.store.CreateRoomIndex(ctx)
 	if err != nil {
-		if errors.Is(err, ErrIndexAlreadyExists) {
+		if err.Error() == "index already exists" {
 			return nil
 		}
 		return err

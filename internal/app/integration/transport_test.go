@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bkohler93/game-backend/internal/app/gateway"
 	"github.com/bkohler93/game-backend/internal/app/matchmake"
 	"github.com/bkohler93/game-backend/internal/shared/constants/metadata"
 	"github.com/bkohler93/game-backend/internal/shared/message"
@@ -29,9 +28,17 @@ func TestRedisMatchmakingClientMessageConsumerFactory(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexepcted error when creating redis client - %v", err)
 	}
-	factory := gateway.NewRedisMatchmakingClientMessageConsumerFactory(rdb)
+	consumerBuilder := func(ctx context.Context, clientId string) transport.MessageConsumer {
+		stream := rediskeys.MatchmakingClientMessageStream(uuidstring.ID(clientId))
+		consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
+		consumer, err := transport.NewRedisMessageGroupConsumer(ctx, rdb, stream, consumerGroup, clientId)
+		if err != nil {
+			panic(err)
+		}
+		return consumer
+	}
 	userId := uuidstring.NewID()
-	_, err = factory.CreateGroupConsumer(ctx, userId.String())
+	_ = consumerBuilder(ctx, userId.String())
 	if err != nil {
 		t.Errorf("unexpected error when creating redisMatchmakingClientMessageConsumer - %v", err)
 	}
@@ -59,11 +66,17 @@ func TestRedisMatchmakingClientMessageConsumerAndProducer(t *testing.T) {
 			panic(err)
 		}
 		userId = uuidstring.NewID()
-		factory := gateway.NewRedisMatchmakingClientMessageConsumerFactory(client)
-		consumer, err = factory.CreateGroupConsumer(ctx, userId.String())
-		if err != nil {
-			panic(err)
+		consumerBuilder := func(ctx context.Context, clientId string) transport.MessageConsumer {
+			stream := rediskeys.MatchmakingClientMessageStream(uuidstring.ID(clientId))
+			consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
+			consumer, err := transport.NewRedisMessageGroupConsumer(ctx, client, stream, consumerGroup, clientId)
+			if err != nil {
+				panic(err)
+			}
+			return consumer
 		}
+		consumer = consumerBuilder(ctx, userId.String())
+
 		producer = transport.NewRedisDynamicMessageProducer(client, rediskeys.MatchmakingClientMessageStream)
 		flush = func() {
 			cancel()
@@ -92,7 +105,7 @@ func TestRedisMatchmakingClientMessageConsumerAndProducer(t *testing.T) {
 			}
 
 			err = producer.SendTo(ctx, userId, &message.Envelope{
-				Type:     payload.GetDiscriminator(),
+				Type:     message.MatchmakingService,
 				Payload:  bytes,
 				MetaData: nil,
 			})
@@ -196,7 +209,7 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 			}
 
 			err = producer.Send(ctx, &message.Envelope{
-				Type:     payload.TypeDiscriminator,
+				Type:     message.GameService,
 				Payload:  bytes,
 				MetaData: nil,
 			})
@@ -276,12 +289,12 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 			}
 
 			metaData := map[string]string{
-				metadata.NewGameState: metadata.Setup,
+				metadata.TransitionTo: metadata.Game,
 				metadata.RoomID:       newId.String(),
 			}
 
 			err = producer.Send(ctx, &message.Envelope{
-				Type:     payload.TypeDiscriminator,
+				Type:     message.GameService,
 				Payload:  bytes,
 				MetaData: metaData,
 			})
@@ -310,8 +323,8 @@ func TestRedisMatchmakingServerMessageConsumerAndProducer(t *testing.T) {
 						t.Errorf("expected room ID in metadata to be %s got %s", newId.String(), metaData[metadata.RoomID])
 					}
 
-					if metaData[metadata.NewGameState] != metadata.Setup {
-						t.Errorf("expected new game state in metadata to be %s got %s", metadata.Setup, metaData[metadata.NewGameState])
+					if metaData[metadata.TransitionTo] != metadata.Game {
+						t.Errorf("expected new game state in metadata to be %s got %s", metadata.Game, metaData[metadata.TransitionTo])
 					}
 
 					count++

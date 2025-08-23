@@ -87,8 +87,7 @@ func (store *RedisStore) UnlockRoom(ctx context.Context, roomId uuidstring.ID, k
 	return nil
 }
 
-func NewRedisRoomStore(rdb *redis.Client) (*RedisStore, error) {
-
+func NewRedisRoomStore(rdb *redis.Client) (Store, error) {
 	luaScripts := make(map[string]*redis.Script)
 
 	addPlayerToRoomSrc, err := files.GetLuaScript(files.LuaAddPlayerToRoom)

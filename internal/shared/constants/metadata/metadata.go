@@ -1,12 +1,12 @@
 package metadata
 
 const (
-	Setup        = "setup"
+	Game         = "game"
 	Remain       = ""
 	Play         = "play"
 	GameOver     = "game_over"
 	Matchmake    = "matchmake"
-	NewGameState = "new_game_state"
+	TransitionTo = "transition_to"
 	RoomID       = "room_id"
 	MetaDataKey  = "meta_data"
 )

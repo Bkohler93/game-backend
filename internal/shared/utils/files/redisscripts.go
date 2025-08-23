@@ -15,6 +15,7 @@ const (
 	LuaUnlockRoom                = "unlock_room.lua"
 	LuaCombineRooms              = "combine_rooms.lua"
 	LuaRemovePlayerFromRoom      = "remove_player_from_room.lua"
+	LuaZPopOldestFromSortedSet   = "zpop_oldest_from_sorted_set.lua"
 )
 
 //go:embed db/redis/scripts/*.lua

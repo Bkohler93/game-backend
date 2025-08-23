@@ -34,6 +34,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	gameTaskStore, err := taskcoordinator.NewRedisGameTaskStore(redisClient)
+	if err != nil {
+		panic(err)
+	}
 	serverId := uuidstring.NewID()
 
 	roomRepository, err := room.NewRepository(ctx, roomStore)
@@ -42,6 +46,7 @@ func main() {
 	}
 	playerRepository := players.NewRepository(playerTrackerStore)
 	matchmakingTaskCoordinator := taskcoordinator.NewMatchmakingTaskCoordinator(matchmakingTaskStore)
+	gameTaskCoordinator := taskcoordinator.NewGameTaskCoordinator(gameTaskStore)
 
 	matchmakingClientMessageProducer := matchmake.NewRedisClientMessageProducer(redisClient)
 	matchmakingServerMessageConsumer, err := matchmake.NewRedisMatchmakingServerMessageConsumer(ctx, redisClient, serverId.String())
@@ -57,6 +62,7 @@ func main() {
 		RoomRepository:             roomRepository,
 		PlayerRepository:           playerRepository,
 		MatchmakingTaskCoordinator: matchmakingTaskCoordinator,
+		GameTaskCoordinator:        gameTaskCoordinator,
 	}
 	m.Start(ctx)
 }

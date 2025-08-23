@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/shared/message"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )
 
@@ -19,15 +21,11 @@ var (
 )
 
 type Client struct {
-	Conn *websocket.Conn
-	//MatchmakingMsgCh chan transport.AckableMessage
-	//GameMsgCh        chan transport.AckableMessage
+	Conn      *websocket.Conn
 	writeChan chan *message.EnvelopeContext
 	ID        uuidstring.ID
 	RoomID    uuidstring.ID
 	routeChan chan *message.EnvelopeContext
-
-	//TransportBus     *TransportBus
 }
 
 var upgrader = websocket.Upgrader{}
@@ -38,7 +36,6 @@ const (
 	maxMessageSize = 512
 )
 
-// func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request, transportBusFactory *ClientTransportBusFactory) (*Client, error) {
 func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request) (*Client, error) {
 	var c *Client
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -52,24 +49,75 @@ func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request) (*Cl
 		conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
-	id := uuidstring.NewID() //TODO this should be stored by the client, or retrieved from a database
-	//transportBus := transportBusFactory.NewClientTransportBus(id)
 
-	//TODO this is temporary until we figure out where the id comes from
-	conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("%s", id)))
+	userId, err := receiveAndVerifyJWT(conn)
+	if err != nil {
+		return c, err
+	}
 
 	c = &Client{
-		Conn: conn,
-		//MatchmakingMsgCh: make(chan transport.AckableMessage),
-		//GameMsgCh:        make(chan transport.AckableMessage),
+		Conn:      conn,
 		writeChan: make(chan *message.EnvelopeContext),
 		routeChan: make(chan *message.EnvelopeContext),
-		ID:        id,
-		//TransportBus:     transportBus,
-		//matchmakingClientMsgConsumer: matchmakingClientMsgConsumer,
-		//matchmakingServerMsgProducer: matchmakingServerMsgProducer,
+		ID:        userId,
 	}
 	return c, nil
+}
+
+func receiveAndVerifyJWT(conn *websocket.Conn) (uuidstring.ID, error) {
+	var id uuidstring.ID
+	messageType, p, err := conn.ReadMessage()
+	if err != nil {
+		return id, err
+	}
+
+	if messageType != websocket.TextMessage && messageType != websocket.BinaryMessage {
+		return id, fmt.Errorf("unhandled message type: %d", messageType)
+	}
+
+	var connectingMessage *ConnectingMessage
+	err = json.Unmarshal(p, &connectingMessage)
+	if err != nil {
+		return id, err
+	}
+	token, err := jwt.Parse(connectingMessage.JwtString, func(token *jwt.Token) (any, error) {
+		if os.Getenv("JWT_SECRET") == "" {
+			return "", fmt.Errorf("JWT_SECRET is not set")
+		}
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	}, jwt.WithValidMethods([]string{"HS256"}))
+	if err != nil {
+		return id, err
+	}
+
+	switch {
+	case token.Valid:
+		idStr, err := token.Claims.GetSubject()
+		if err != nil {
+			return uuidstring.NewID(), err
+		}
+		msg := NewAuthenticatedMessage(uuidstring.ID(idStr))
+		bytes, err := json.Marshal(msg)
+		if err != nil {
+			return uuidstring.NewID(), err
+		}
+		id = msg.UserId
+
+		err = conn.WriteMessage(websocket.TextMessage, bytes)
+		if err != nil {
+			log.Printf("error sending logged in message - %v\n", err)
+		}
+
+		return id, nil
+	case errors.Is(err, jwt.ErrTokenMalformed):
+		return id, err
+	case errors.Is(err, jwt.ErrTokenSignatureInvalid):
+		return id, err
+	case errors.Is(err, jwt.ErrTokenExpired) || errors.Is(err, jwt.ErrTokenNotValidYet):
+		return id, err
+	default:
+		return id, fmt.Errorf("could not handle token")
+	}
 }
 
 func (c *Client) PingLoop(ctx context.Context) error {
@@ -92,31 +140,12 @@ func (c *Client) PingLoop(ctx context.Context) error {
 }
 
 func (c *Client) WritePump(ctx context.Context) error {
-
 	for {
-		//var outMsg []byte
-		//var ackFunc func() error
 		select {
 		case <-ctx.Done():
 			return nil
 		case outMsg := <-c.writeChan:
-			bytes := outMsg.Env.Payload
-			//bytes := outMsg.Payload
-			//case matchmakingMsg := <-c.MatchmakingMsgCh:
-			//	messageId := matchmakingMsg.ID
-			//	outMsg = matchmakingMsg.Payload.([]byte)
-			//	ackFunc = func() error {
-			//		err := c.TransportBus.AckMatchmakingMsg(ctx, messageId)
-			//		return err
-			//	}
-			//case gameMsg := <-c.GameMsgCh:
-			//	outMsg = gameMsg.Payload.([]byte)
-			//	ackFunc = func() error {
-			//		//TODO return c.TransportBus.AckGameMsg(ctx, messageId)
-			//		return nil
-			//	}
-			//}
-			err := c.Conn.WriteMessage(websocket.TextMessage, bytes)
+			err := c.Conn.WriteMessage(websocket.TextMessage, outMsg.Env.Payload)
 			if err != nil {
 				return fmt.Errorf("failed to write to websocket - %v", err)
 			}
@@ -130,7 +159,7 @@ func (c *Client) WritePump(ctx context.Context) error {
 
 func (c *Client) ReadPump(ctx context.Context) error {
 	readChan := make(chan []byte)
-	errChan := make(chan error, 1) // Buffered channel for error to prevent goroutine leak if main loop exits
+	errChan := make(chan error, 1)
 
 	go func() {
 		defer close(readChan)
@@ -157,7 +186,7 @@ func (c *Client) ReadPump(ctx context.Context) error {
 			return nil
 
 		case err := <-errChan:
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseAbnormalClosure) {
 				return ErrClientClosedConnection
 			}
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -171,62 +200,22 @@ func (c *Client) ReadPump(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			var envelope *message.Envelope
-			err := json.Unmarshal(bytes, &envelope)
+			routingDetails := struct {
+				Type string `json:"$type"`
+			}{}
+			err := json.Unmarshal(bytes, &routingDetails)
 			if err != nil {
 				log.Printf("client %s: failed to unmarshal message: %v\n", c.ID, err)
 				continue
 			}
+			envelope := &message.Envelope{
+				Type:     getServiceType(routingDetails.Type),
+				Payload:  bytes,
+				MetaData: nil,
+			}
 
 			msgContext := message.NewNoAckEnvelopeContext(envelope)
 			c.routeChan <- msgContext
-			//if err = c.RouteMessage(envelope, ctx); err != nil {
-			//	log.Printf("routing message failed - %v\n", err)
-			//}
 		}
 	}
 }
-
-//func (c *Client) RouteMessage(msg message.Envelope, ctx context.Context) error {
-//	switch msg.Type {
-//	case string(message.MatchmakingService):
-//		return c.TransportBus.SendMatchmakingServerMessage(ctx, msg.Payload)
-//
-//	case string(message.GameService):
-//		//TODO err = c.m.Send(ctx, rediskeys.GameServerMessageStream, msg.Payload)
-//	default:
-//		log.Println("unexpected gateway.ServiceType", msg.Type)
-//	}
-//	return nil
-//}
-//
-//func (c *Client) ListenToServices(ctx context.Context) error {
-//	matchmakingMsgCh, matchmakingErrCh := c.TransportBus.StartReceivingMatchmakingClientMessages(ctx)
-//
-//	eg, gCtx := errgroup.WithContext(ctx)
-//
-//	eg.Go(func() error {
-//		for {
-//			select {
-//			case <-gCtx.Done():
-//				return nil
-//			case wrappedMatchmakingMsg, open := <-matchmakingMsgCh:
-//				if !open {
-//					return nil
-//				}
-//				c.MatchmakingMsgCh <- wrappedMatchmakingMsg
-//			}
-//		}
-//	})
-//
-//	eg.Go(func() error {
-//		select {
-//		case <-gCtx.Done():
-//			return nil
-//		case err := <-matchmakingErrCh:
-//			return err
-//		}
-//	})
-//
-//	return eg.Wait()
-//}

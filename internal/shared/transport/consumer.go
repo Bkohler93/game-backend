@@ -65,7 +65,7 @@ type MessageConsumerType string
 type MessageConsumer interface {
 	StartReceiving(ctx context.Context) (<-chan *message.EnvelopeContext, <-chan error)
 }
-type MessageConsumerBuilderFunc func(streamSuffix string) MessageConsumer
+type MessageConsumerBuilderFunc func(ctx context.Context, streamSuffix string) (MessageConsumer, error)
 
 type RedisMessageConsumer struct {
 	rdb            *redis.Client
@@ -131,7 +131,7 @@ func (r RedisMessageConsumer) StartReceiving(ctx context.Context) (<-chan *messa
 	return msgCh, errCh
 }
 
-type MessageGroupConsumerBuilderFunc = func(consumerId string) MessageConsumer
+// type MessageGroupConsumerBuilderFunc = func(ctx context.Context, consumerId string) MessageConsumer
 type MessageConsumerFactory interface {
 	CreateConsumer(ctx context.Context, consumer string) (MessageConsumer, error)
 }

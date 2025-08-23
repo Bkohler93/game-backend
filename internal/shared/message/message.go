@@ -3,9 +3,7 @@ package message
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"reflect"
 
 	"github.com/bkohler93/game-backend/internal/shared/constants/metadata"
 )
@@ -39,9 +37,6 @@ type MessageContext struct {
 
 type Message interface {
 	Discriminable
-	//Identifiable
-	//AckFuncAccessor
-	//MetaDataAccessor
 }
 
 type Discriminable interface {
@@ -53,42 +48,10 @@ type AckFuncAccessor interface {
 	SetAck(func(context.Context) error)
 }
 
-type Identifiable interface {
-	IDGettable
-	IDSettable
-}
-
-type IDGettable interface {
-	GetID() string
-}
-
-type IDSettable interface {
-	SetID(string)
-}
-
 type EmptyMessage struct{}
 
 func (e EmptyMessage) GetDiscriminator() string {
 	return ""
-}
-
-func (e EmptyMessage) Ack(ctx context.Context) error {
-	return nil
-}
-
-func (e EmptyMessage) SetAck(f func(context.Context) error) {
-	return
-}
-
-func (e EmptyMessage) GetMetaData() metadata.MetaData {
-	return map[string]string{}
-}
-
-func (e EmptyMessage) SetMetaData(m metadata.MetaData) {
-}
-
-var PrintTypeDiscriminator = func(i any) string {
-	return reflect.TypeOf(i).String()
 }
 
 func UnmarshalWrappedType[T Message](data []byte, typeRegistry map[string]func() T) (T, error) {
@@ -112,7 +75,7 @@ func UnmarshalWrappedType[T Message](data []byte, typeRegistry map[string]func()
 }
 
 type Envelope struct {
-	Type     string            `json:"type"`
+	Type     ServiceType       `json:"type"`
 	Payload  json.RawMessage   `json:"payload"` // json.RawMessage holds the raw JSON bytes
 	MetaData metadata.MetaData `json:"metadata"`
 }
@@ -125,39 +88,7 @@ func (e *Envelope) EnsureMetaData() {
 
 func NewEnvelopeOf[T ~string](msgType T, Payload json.RawMessage) Envelope {
 	return Envelope{
-		Type:    string(msgType),
+		Type:    ServiceType(msgType),
 		Payload: Payload,
 	}
-}
-
-func (e *Envelope) ToMap() map[string]any {
-	return map[string]any{
-		"type":    e.Type,
-		"payload": string(e.Payload),
-	}
-}
-
-func (e *Envelope) FromMap(data map[string]any) error {
-	dataType, ok := data["type"].(string)
-	if !ok {
-		return errors.New("invalid stored in 'type' property")
-	}
-	payload, ok := data["payload"].(json.RawMessage)
-	if !ok {
-		return errors.New("invalid stored in 'payload' property")
-	}
-	e.Type = dataType
-	e.Payload = payload
-	return nil
-}
-
-func DecodePayload[T any](payload json.RawMessage) (*T, error) {
-	var msg T
-	err := json.Unmarshal(payload, &msg)
-	return &msg, err
-}
-
-type MapSerializable interface {
-	ToMap() map[string]interface{}
-	FromMap(map[string]interface{}) error
 }

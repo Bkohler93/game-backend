@@ -14,7 +14,6 @@ import (
 )
 
 type Gateway struct {
-	//clientTransportBusFactory *client.ClientTransportBusFactory
 	roomRepository *room.Repository
 	addr           string
 	hub            *Hub
@@ -25,7 +24,6 @@ func NewGateway(addr string, rr *room.Repository, transportFactory *TransportFac
 		transportFactory: transportFactory,
 	}
 	return Gateway{
-		//clientTransportBusFactory: clientTransportBusFactory,
 		roomRepository: rr,
 		addr:           addr,
 		hub:            NewHub(r),
@@ -34,7 +32,7 @@ func NewGateway(addr string, rr *room.Repository, transportFactory *TransportFac
 
 func (g *Gateway) Start(ctx context.Context) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		log.Println("health check received at \"\\\"")
 		_, err := fmt.Fprintln(w, "OK")
@@ -42,6 +40,7 @@ func (g *Gateway) Start(ctx context.Context) {
 			log.Println(err)
 		}
 	})
+
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		eg, ctx := errgroup.WithContext(ctx)
 
@@ -67,10 +66,6 @@ func (g *Gateway) Start(ctx context.Context) {
 		})
 
 		eg.Go(func() error { return c.ReadPump(ctx) })
-
-		//eg.Go(func() error {
-		//	return c.ListenToServices(ctx)
-		//})
 
 		if err = eg.Wait(); err != nil {
 			if errors.Is(err, ErrClientClosedConnection) {
