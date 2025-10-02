@@ -3,7 +3,6 @@ package matchmake
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"time"
 
@@ -21,6 +20,7 @@ type Matchmaker struct {
 	RoomRepository             *room.Repository
 	PlayerRepository           *players.Repository
 	MatchmakingTaskCoordinator *taskcoordinator.MatchmakingTaskCoordinator
+	GameTaskCoordinator        *taskcoordinator.GameTaskCoordinator
 }
 
 const (
@@ -117,7 +117,7 @@ func (m *Matchmaker) runMatchmakingLoop(ctx context.Context, workerOffset int) e
 		select {
 		case <-timer.C:
 			err := tryMakingMatches()
-			if utils.ErrorsIsAny(err, taskcoordinator.NoPendingTasksAvailableErr, room.ErrDidNotLock) {
+			if utils.ErrorsIsAny(err, taskcoordinator.ErrNoTasksAvailable, room.ErrDidNotLock) {
 				idleCount++
 				if idleCount > 5 {
 					idleCount = 5
@@ -127,23 +127,23 @@ func (m *Matchmaker) runMatchmakingLoop(ctx context.Context, workerOffset int) e
 				continue
 			}
 			if err != nil {
-				log.Printf("encountered an error claiming next pending task - %v\n", err)
+				log.Printf("error trying to make match - %v\n", err)
 			} else {
 				idleCount = 0 //successfully found pending task and tried to matchmake, reset idle time
 			}
 
 		case alert := <-alertCh:
 			idleCount = 0
-			if alert != "" {
+			if alert.Type != "" {
 				log.Println("received unknown alert from notify matchmake workers channel,", alert)
 				continue
 			}
 			err := tryMakingMatches()
-			if utils.ErrorsIsAny(err, taskcoordinator.NoPendingTasksAvailableErr, room.ErrDidNotLock) {
+			if utils.ErrorsIsAny(err, taskcoordinator.ErrNoTasksAvailable, room.ErrDidNotLock) {
 				continue
 			}
 			if err != nil {
-				log.Printf("encountered an error claiming next pending task - %v\n", err)
+				log.Printf("error trying to make match - %v\n", err)
 			}
 
 		case err := <-errCh:
@@ -174,7 +174,7 @@ func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 					return nil
 				}
 				var err error
-				switch msg := matchmakingMsg.(type) {
+				switch msg := matchmakingMsg.Msg.(type) {
 				case *ExitMatchmakingMessage:
 					err = m.processExitMatchmakingRequest(gCtx, msg) //errors received from this are breaking
 					if err != nil {
@@ -185,11 +185,17 @@ func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 					if err != nil {
 						return err
 					}
+					// case *ConfirmMatchMessage:
+					// 	err = m.processConfirmMatchRequest(gCtx, msg) //errors received from this are breaking
+					// 	if err != nil {
+					// 		return err
+					// 	}
 				}
 				//TODO maybe handle breaking errors that should cancel anymore message processing (any failures to interact with redis db.
 				//TODO 	otherwise should just continue reading from the server message stream
 				if err == nil {
-					err = m.TransportBus.AckServerMessage(gCtx, matchmakingMsg.GetID())
+					err = matchmakingMsg.AckFunc(gCtx)
+					//err = m.TransportBus.AckServerMessage(gCtx, matchmakingMsg.GetID())
 				}
 				if err != nil {
 					log.Printf("received an error - %v", err)
@@ -249,7 +255,7 @@ func (m *Matchmaker) attemptMatchmake(ctx context.Context, roomId uuidstring.ID)
 	for _, openRm := range openRooms {
 		combinedRoom, err := m.combineRooms(ctx, rm, openRm)
 		if err != nil {
-			if utils.ErrorsIsAny(err, room.ErrRoomFull, room.ErrDidNotLock) {
+			if utils.ErrorsIsAny(err, room.ErrRoomFull, room.ErrDidNotLock, room.ErrRoomNotFound) {
 				continue
 			}
 			return err
@@ -258,7 +264,15 @@ func (m *Matchmaker) attemptMatchmake(ctx context.Context, roomId uuidstring.ID)
 		var clientMsg MatchmakingClientMessage
 		if combinedRoom.PlayerCount == constants.MaxPlayerCount {
 			err = m.MatchmakingTaskCoordinator.RemovePendingTask(ctx, combinedRoom.RoomId) // room is full no more need for tasks
+			if err != nil {
+				log.Printf("error removing pending task - %v", err)
+			}
 			clientMsg = NewRoomFullMessage(combinedRoom.RoomId, combinedRoom.PlayerCount)
+
+			err = m.GameTaskCoordinator.EnqueueNewGameTask(ctx, combinedRoom.RoomId)
+			if err != nil {
+				log.Printf("error new game task for room[%s] - %v\n", combinedRoom.RoomId, err)
+			}
 		} else {
 			clientMsg = NewRoomChangedMessage(combinedRoom.RoomId, combinedRoom.PlayerCount, combinedRoom.AverageSkill)
 		}
@@ -276,6 +290,15 @@ func (m *Matchmaker) attemptMatchmake(ctx context.Context, roomId uuidstring.ID)
 		if err != nil {
 			return err
 		}
+	} else {
+		err = m.MatchmakingTaskCoordinator.RemoveInProgressTask(ctx, rm.RoomId)
+		if err != nil {
+			return err
+		}
+		// err = m.RoomRepository.DeleteRoom(ctx, rm.RoomId)
+		// if err != nil {
+		// 	return err
+		// }
 	}
 	return nil
 }
@@ -296,8 +319,14 @@ func (m *Matchmaker) combineRooms(ctx context.Context, rm room.Room, rmToJoin ro
 
 	combinedRoom, err = m.RoomRepository.CombineRooms(ctx, rm.RoomId, rmToJoin.RoomId) //this means that "rm" gets absorbed into "openRm",
 	if err != nil {
+		log.Println("error combining rooms - ", err)
 		return combinedRoom, err
 	}
+
+	for _, playerId := range combinedRoom.PlayerIds {
+		m.PlayerRepository.SetPlayerActive(ctx, playerId, combinedRoom.RoomId)
+	}
+
 	err = m.MatchmakingTaskCoordinator.RemoveInProgressTask(ctx, rm.RoomId) //room is absorbed, no more need for tasks
 	if err != nil {
 		return combinedRoom, err
@@ -344,7 +373,6 @@ func (m *Matchmaker) processExitMatchmakingRequest(ctx context.Context, msg *Exi
 
 	for _, playerId := range newPlayerIds {
 		playerLeftMsg := NewPlayerLeftRoomMessage(msg.UserId)
-		fmt.Printf("sending message to player[%s] - %v\n", playerId, playerLeftMsg)
 		err = m.TransportBus.SendToClient(ctx, playerId, &playerLeftMsg)
 		if err != nil {
 			log.Printf("failed to send message to client[%s] - %v\n", playerId, err)

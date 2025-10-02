@@ -2,33 +2,37 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/bkohler93/game-backend/internal/shared/message"
 )
 
-func UnwrapAndForward[T message.Message](ctx context.Context, wrappedMsgCh <-chan WrappedConsumeMsg, errCh <-chan error, messageTypeConstructorRegistry map[string]func() T) (<-chan T, <-chan error) {
-	msgCh := make(chan T)
+func UnwrapAndForward[T message.Message](ctx context.Context, envelopeCh <-chan *message.EnvelopeContext, errCh <-chan error, messageTypeConstructorRegistry map[string]func() T) (<-chan *message.MessageContext, <-chan error) {
+	msgCh := make(chan *message.MessageContext)
 	go func() {
 		for {
 			select {
-			case wrappedMsg, open := <-wrappedMsgCh:
+			case envelope, open := <-envelopeCh:
 				if !open {
 					return
 				}
-				bytes := wrappedMsg.Payload.([]byte)
+				bytes := envelope.Env.Payload
 
-				msg, err := message.UnmarshalWrappedType[T](bytes, messageTypeConstructorRegistry)
+				msg, err := message.UnmarshalWrappedType(bytes, messageTypeConstructorRegistry)
 				if err != nil {
 					log.Printf("received invalid msg payload - %v", err)
 					continue
 				}
-				msg.SetID(wrappedMsg.ID)
 
-				msgCh <- msg
+				msgContext := &message.MessageContext{
+					Msg:      msg,
+					AckFunc:  envelope.AckFunc,
+					Metadata: &envelope.Env.MetaData,
+				}
+
+				msgCh <- msgContext
 			case err := <-errCh:
-				fmt.Println(err)
+				log.Println(err)
 			case <-ctx.Done():
 				return
 			}

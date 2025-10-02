@@ -9,6 +9,7 @@ import (
 const (
 	MatchmakeTaskPendingSortedSetKey    = "matchmake:task:pending"
 	MatchmakeTaskInProgressSortedSetKey = "matchmake:task:inprogress"
+	NewGameSortedSetKey                 = "game:task:newgame"
 )
 
 func RoomsJSONObject(roomId uuidstring.ID) string {
@@ -27,4 +28,8 @@ func RoomLockKey(roomId uuidstring.ID) string {
 
 func MatchmakingClientMessageCGroup(clientID uuidstring.ID) string {
 	return fmt.Sprintf("%s:client_message:cgroup:%s", matchmakeStream, clientID)
+}
+
+func GameServerMessageCGroup(roomID uuidstring.ID) string {
+	return fmt.Sprintf("%s:server_message:cgroup:%s", gameStream, roomID)
 }

@@ -12,8 +12,8 @@ const (
 	MatchmakeNotifyWorkersPubSub = "matchmake:notify_worker"
 )
 
-func GameServerMessageStream(gameId uuidstring.ID) string {
-	return fmt.Sprintf("%s:server_message:%s", gameStream, gameId)
+func GameServerMessageStream(roomId uuidstring.ID) string {
+	return fmt.Sprintf("%s:server_message:%s", gameStream, roomId)
 }
 
 func GameClientMessageStream(clientId uuidstring.ID) string {

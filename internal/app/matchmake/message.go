@@ -11,22 +11,6 @@ type MatchmakingClientMessage interface {
 
 func UnmarshalMatchmakingClientMessage(data []byte) (MatchmakingClientMessage, error) {
 	return message.UnmarshalWrappedType[MatchmakingClientMessage](data, matchmakingMessageRegistry)
-	//var temp struct {
-	//	TypeDiscriminator string `json:"$type"`
-	//}
-	//if err := json.Unmarshal(data, &temp); err != nil {
-	//	return nil, err
-	//}
-	//
-	//if constructor, ok := matchmakingMessageRegistry[temp.TypeDiscriminator]; ok {
-	//	concreteMessage := constructor()
-	//	if err := json.Unmarshal(data, &concreteMessage); err != nil {
-	//		return nil, err
-	//	}
-	//	return concreteMessage, nil
-	//}
-	//
-	//return nil, fmt.Errorf("unknown matchmaking message type: %s", temp.TypeDiscriminator)
 }
 
 var matchmakingMessageRegistry = map[string]func() MatchmakingClientMessage{
@@ -46,7 +30,6 @@ const (
 
 type RoomFullMessage struct {
 	TypeDiscriminator string        `json:"$type"`
-	ID                string        `json:"ID"`
 	RoomID            uuidstring.ID `json:"room_id"`
 	PlayerCount       int           `json:"player_count"`
 }
@@ -54,7 +37,6 @@ type RoomFullMessage struct {
 func NewRoomFullMessage(roomID uuidstring.ID, playerCount int) *RoomFullMessage {
 	return &RoomFullMessage{
 		TypeDiscriminator: string(RoomFull),
-		ID:                "",
 		RoomID:            roomID,
 		PlayerCount:       playerCount,
 	}
@@ -64,26 +46,9 @@ func (r *RoomFullMessage) GetDiscriminator() string {
 	return r.TypeDiscriminator
 }
 
-func (r *RoomFullMessage) GetID() string {
-	return r.ID
-}
-
-func (r *RoomFullMessage) SetID(s string) {
-	r.ID = s
-}
-
 type PlayerLeftRoomMessage struct {
-	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	UserLeftId        uuidstring.ID `json:"user_left_id"`
-}
-
-func (p *PlayerLeftRoomMessage) GetID() string {
-	return p.ID
-}
-
-func (p *PlayerLeftRoomMessage) SetID(s string) {
-	p.ID = s
 }
 
 func (p *PlayerLeftRoomMessage) GetDiscriminator() string {
@@ -98,17 +63,8 @@ func NewPlayerLeftRoomMessage(userLeftId uuidstring.ID) PlayerLeftRoomMessage {
 }
 
 type PlayerJoinedRoomMessage struct {
-	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	UserJoinedId      uuidstring.ID `json:"user_joined_id"`
-}
-
-func (p *PlayerJoinedRoomMessage) GetID() string {
-	return p.ID
-}
-
-func (p *PlayerJoinedRoomMessage) SetID(s string) {
-	p.ID = s
 }
 
 func (p *PlayerJoinedRoomMessage) GetDiscriminator() string {
@@ -123,19 +79,10 @@ func NewPlayerJoinedRoomMessage(userJoinedId uuidstring.ID) *PlayerJoinedRoomMes
 }
 
 type RoomChangedMessage struct {
-	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	NewRoomId         uuidstring.ID `json:"new_room_id"`
 	PlayerCount       int           `json:"player_count"`
 	AvgSkill          int           `json:"avg_skill"`
-}
-
-func (r *RoomChangedMessage) GetID() string {
-	return r.ID
-}
-
-func (r *RoomChangedMessage) SetID(s string) {
-	r.ID = s
 }
 
 func (r *RoomChangedMessage) GetDiscriminator() string {
@@ -157,22 +104,6 @@ type MatchmakingServerMessage interface {
 
 func UnmarshalMatchmakingServerMessage(data []byte) (MatchmakingServerMessage, error) {
 	return message.UnmarshalWrappedType[MatchmakingServerMessage](data, serverMessageTypeRegistry)
-	//var temp struct {
-	//	TypeDiscriminator string `json:"$type"`
-	//}
-	//if err := json.Unmarshal(data, &temp); err != nil {
-	//	return nil, err
-	//}
-	//
-	//if constructor, ok := serverMessageTypeRegistry[temp.TypeDiscriminator]; ok {
-	//	concreteMessage := constructor()
-	//	if err := json.Unmarshal(data, &concreteMessage); err != nil {
-	//		return nil, err
-	//	}
-	//	return concreteMessage, nil
-	//}
-	//
-	//return nil, fmt.Errorf("unknown matchmaking message type: %s", temp.TypeDiscriminator)
 }
 
 var serverMessageTypeRegistry = map[string]func() MatchmakingServerMessage{
@@ -187,22 +118,23 @@ const (
 	ExitMatchmaking    MatchmakingServerMessageType = "ExitMatchmaking"
 )
 
+var matchmakingServerMessageTypes = map[string]struct{}{
+	string(RequestMatchmaking): {},
+	string(ExitMatchmaking):    {},
+}
+
+func IsMatchmakeServerMessageType(t string) bool {
+	_, ok := matchmakingServerMessageTypes[t]
+	return ok
+}
+
 type RequestMatchmakingMessage struct {
-	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	UserId            uuidstring.ID `redis:"user_id" json:"user_id"`
 	Name              string        `redis:"name" json:"name"`
 	TimeCreated       int64         `redis:"time_created" json:"time_created"` //TODO remove this? The Room object will contain a Retry count
 	Skill             int           `redis:"skill" json:"skill"`
 	Region            string        `redis:"region" json:"region"`
-}
-
-func (m *RequestMatchmakingMessage) GetID() string {
-	return m.ID
-}
-
-func (m *RequestMatchmakingMessage) SetID(s string) {
-	m.ID = s
 }
 
 func (m *RequestMatchmakingMessage) GetDiscriminator() string {
@@ -225,18 +157,9 @@ func NewRequestMatchmakingMessage(userId uuidstring.ID, name string, timeCreated
 }
 
 type ExitMatchmakingMessage struct {
-	ID                string        `json:"ID"`
 	TypeDiscriminator string        `json:"$type"`
 	UserId            uuidstring.ID `json:"user_id"`
 	UserSkill         int           `json:"user_skill"`
-}
-
-func (m *ExitMatchmakingMessage) GetID() string {
-	return m.ID
-}
-
-func (m *ExitMatchmakingMessage) SetID(s string) {
-	m.ID = s
 }
 
 func (m *ExitMatchmakingMessage) GetDiscriminator() string {

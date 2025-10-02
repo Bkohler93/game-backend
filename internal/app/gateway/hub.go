@@ -1,33 +1,37 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net"
-
-	"github.com/bkohler93/game-backend/internal/app/gateway/client"
-	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 type Hub struct {
-	Clients map[uuidstring.ID]*client.Client
+	router  *Router
+	Clients map[*Client]context.CancelFunc
 
-	RegisterCh   chan *client.Client
-	UnregisterCh chan *client.Client
+	RegisterCh   chan *Client
+	UnregisterCh chan *Client
 }
 
-func NewHub() *Hub {
+func NewHub(r *Router) *Hub {
 	h := &Hub{
-		Clients:      map[uuidstring.ID]*client.Client{},
-		RegisterCh:   make(chan *client.Client),
-		UnregisterCh: make(chan *client.Client),
+		Clients:      make(map[*Client]context.CancelFunc),
+		RegisterCh:   make(chan *Client),
+		UnregisterCh: make(chan *Client),
+		router:       r,
 	}
 
 	go func() {
 		for {
 			select {
 			case c := <-h.RegisterCh:
-				h.Clients[c.ID] = c
+				ctx, cancelFunc := context.WithCancel(context.Background())
+				h.Clients[c] = cancelFunc
+
+				go h.router.RouteClientTraffic(ctx, c)
+
 				log.Printf("registered client[%s]\n", c.ID)
 			case c := <-h.UnregisterCh:
 				err := c.Conn.Close()
@@ -36,7 +40,9 @@ func NewHub() *Hub {
 						log.Printf("error closing client's(%s) websocket conn - %v", c.ID.String(), err)
 					}
 				}
-				delete(h.Clients, c.ID)
+				cancelFunc := h.Clients[c]
+				cancelFunc()
+				delete(h.Clients, c)
 				log.Printf("unregistered client[%s]\n", c.ID)
 			}
 		}

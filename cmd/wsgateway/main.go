@@ -7,7 +7,6 @@ import (
 	"syscall"
 
 	"github.com/bkohler93/game-backend/internal/app/gateway"
-	"github.com/bkohler93/game-backend/internal/app/gateway/client"
 	"github.com/bkohler93/game-backend/internal/shared/room"
 	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/internal/shared/utils"
@@ -18,11 +17,16 @@ import (
 
 func main() {
 	utils.LoadEnv()
-	port := os.Getenv("PORT")
+	port := os.Getenv("WEBSOCKET_PORT")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
 	redisClient, err := redisutils.NewRedisMatchmakeClient(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	redisWriteClient, err := redisutils.NewRedisMatchmakeClient(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -36,19 +40,30 @@ func main() {
 		panic(err)
 	}
 
-	clientTransportBusFactory := client.NewClientTransportBusFactory(redisClient, func(clientId string) transport.MessageGroupConsumer {
-		stream := rediskeys.MatchmakingClientMessageStream(uuidstring.ID(clientId))
-		consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
-		consumer, err := transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, clientId)
-		if err != nil {
-			panic(err)
-		}
-		return consumer
-	}, func() transport.MessageProducer {
-		return transport.NewRedisMessageProducer(redisClient, rediskeys.MatchmakingServerMessageStream)
-	})
+	streamListener := transport.NewRedisStreamListener(ctx, redisClient)
 
-	g := gateway.NewGateway(port, roomRepository, clientTransportBusFactory)
+	transportFactory := &gateway.TransportFactory{
+		MatchmakingClientMsgConsumerBuilder: func(ctx context.Context, clientId string) (transport.MessageConsumer, error) {
+			stream := rediskeys.MatchmakingClientMessageStream(uuidstring.ID(clientId))
+			// consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
+			// return transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, clientId)
+			return streamListener.AddConsumer(stream), nil
+		},
+		GameClientMsgConsumerBuilder: func(ctx context.Context, clientId string) (transport.MessageConsumer, error) {
+			stream := rediskeys.GameClientMessageStream(uuidstring.ID(clientId))
+			// consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
+			// return transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, clientId)
+			return streamListener.AddConsumer(stream), nil
+		},
+		MatchmakingServerMsgProducerBuilder: func() transport.MessageProducer {
+			return transport.NewRedisMessageProducer(redisWriteClient, rediskeys.MatchmakingServerMessageStream)
+		},
+		GameplayServerMsgProducerBuilder: func() transport.DynamicMessageProducer {
+			return transport.NewRedisDynamicMessageProducer(redisWriteClient, rediskeys.GameServerMessageStream)
+		},
+	}
+
+	g := gateway.NewGateway(port, roomRepository, transportFactory)
 
 	g.Start(ctx)
 }
