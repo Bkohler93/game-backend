@@ -24,9 +24,9 @@ func NewAuthServer(addr string) *AuthServer {
 
 func (srv *AuthServer) Start(ctx context.Context) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/auth/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		log.Println("health check received at \"\\\"")
+		log.Println("health check received at '/auth/health'")
 		_, err := fmt.Fprintln(w, "OK")
 		if err != nil {
 			log.Println(err)
@@ -44,6 +44,8 @@ func (srv *AuthServer) Start(ctx context.Context) {
 		}
 
 		guestId := uuidstring.NewID()
+
+		fmt.Printf("authorizing guest with id=[%s]\n", guestId)
 
 		claims := jwt.RegisteredClaims{
 			// A usual scenario is to set the expiration time relative to the current time

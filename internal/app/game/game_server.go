@@ -2,9 +2,7 @@ package game
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -15,7 +13,7 @@ import (
 )
 
 const (
-	StartGamePeriod = time.Second * 5
+	StartGamePeriod = time.Millisecond * 100
 )
 
 type GameServer struct {
@@ -49,12 +47,11 @@ func (gs *GameServer) Start(ctx context.Context) {
 				}
 				continue
 			}
-			gameCtx, cancel := context.WithCancel(ctx)
 
-			fmt.Printf("received new game task for room[%s]\n", roomID)
 			wg.Add(1)
 
 			go func() {
+				gameCtx, cancel := context.WithCancel(ctx)
 				defer cancel()
 				err := gs.StartGame(gameCtx, roomID)
 				if err != nil {
@@ -74,47 +71,14 @@ func (gs *GameServer) StartGame(ctx context.Context, roomID uuidstring.ID) error
 	if err != nil {
 		return err
 	}
-	playerIds := rm.PlayerIds
-	playersConnected := make(map[uuidstring.ID]bool)
-	for _, id := range playerIds {
-		playersConnected[id] = false
-	}
-	consumer, err := gs.transportFactory.GameServerMsgConsumerBuilder(ctx, roomID.String())
+
+	messageConsumer, err := gs.transportFactory.GameServerMsgConsumerBuilder(ctx, roomID.String())
 	if err != nil {
 		return err
 	}
+	messageProducer := gs.transportFactory.GameClientMsgProducerBuilder()
+	bus := NewGameTransportBus(messageConsumer, messageProducer)
 
-	consumerCtx, cancel := context.WithCancel(ctx)
-	receiveCh, errCh := consumer.StartReceiving(consumerCtx)
-	for {
-		select {
-		case <-ctx.Done():
-			cancel()
-			return nil
-		case envCtx := <-receiveCh:
-			var confirmMatchMsg *ConfirmMatchMessage
-			err = json.Unmarshal(envCtx.Env.Payload, &confirmMatchMsg)
-			if err != nil {
-				log.Printf("failed to unmarshal envelope payload - %v\n", err)
-				continue
-			}
-			playersConnected[confirmMatchMsg.UserId] = true
-			if allPlayersConnected(&playersConnected) {
-				cancel() //stop listening for game server messages, will start listening in game
-				g := NewGame(roomID, gs.transportFactory, rm.PlayerIds)
-				return g.Start(ctx)
-			}
-		case err := <-errCh:
-			log.Printf("encountered an error from ServerMessage stream - %v\n", err)
-		}
-	}
-}
-
-func allPlayersConnected(playersConnected *map[uuidstring.ID]bool) bool {
-	for _, isConnected := range *playersConnected {
-		if !isConnected {
-			return false
-		}
-	}
-	return true
+	g := NewGame(ctx, roomID, bus, rm.PlayerIds)
+	return g.Start()
 }

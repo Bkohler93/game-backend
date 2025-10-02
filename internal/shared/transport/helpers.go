@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/bkohler93/game-backend/internal/shared/message"
@@ -19,20 +18,21 @@ func UnwrapAndForward[T message.Message](ctx context.Context, envelopeCh <-chan 
 				}
 				bytes := envelope.Env.Payload
 
-				msg, err := message.UnmarshalWrappedType[T](bytes, messageTypeConstructorRegistry)
+				msg, err := message.UnmarshalWrappedType(bytes, messageTypeConstructorRegistry)
 				if err != nil {
 					log.Printf("received invalid msg payload - %v", err)
 					continue
 				}
 
 				msgContext := &message.MessageContext{
-					Msg:     msg,
-					AckFunc: envelope.AckFunc,
+					Msg:      msg,
+					AckFunc:  envelope.AckFunc,
+					Metadata: &envelope.Env.MetaData,
 				}
 
 				msgCh <- msgContext
 			case err := <-errCh:
-				fmt.Println(err)
+				log.Println(err)
 			case <-ctx.Done():
 				return
 			}

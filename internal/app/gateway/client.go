@@ -18,6 +18,7 @@ import (
 
 var (
 	ErrClientClosedConnection = errors.New("client disconnected")
+	ErrClientDisconnected     = errors.New("client disconnected due to abnormal closure")
 )
 
 type Client struct {
@@ -26,6 +27,7 @@ type Client struct {
 	ID        uuidstring.ID
 	RoomID    uuidstring.ID
 	routeChan chan *message.EnvelopeContext
+	errChan   chan error
 }
 
 var upgrader = websocket.Upgrader{}
@@ -59,6 +61,7 @@ func NewClient(ctx context.Context, w http.ResponseWriter, r *http.Request) (*Cl
 		Conn:      conn,
 		writeChan: make(chan *message.EnvelopeContext),
 		routeChan: make(chan *message.EnvelopeContext),
+		errChan:   make(chan error),
 		ID:        userId,
 	}
 	return c, nil
@@ -186,13 +189,15 @@ func (c *Client) ReadPump(ctx context.Context) error {
 			return nil
 
 		case err := <-errChan:
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseAbnormalClosure) {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+				c.errChan <- ErrClientClosedConnection
 				return ErrClientClosedConnection
 			}
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("client[%s]: websocket unexpectedly closed - %v\n", c.ID, err)
+			if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				c.errChan <- ErrClientDisconnected
+				return ErrClientDisconnected
 			} else {
-				log.Printf("client[%s]: websocket encountered an error: %v\n", c.ID, err)
+				log.Printf("client[%s]: websocket encountered an unknown error - %v\n", c.ID, err)
 			}
 			return err
 

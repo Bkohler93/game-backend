@@ -3,7 +3,7 @@ package auth
 import "time"
 
 const (
-	AllowableGuestRequestPeriod = time.Second * 5
+	AllowableGuestRequestPeriod = time.Second * 1
 )
 
 type RateLimiter struct {

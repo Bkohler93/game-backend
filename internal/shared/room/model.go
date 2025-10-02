@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	PendingTime = time.Second * 5
+	PendingTime = time.Second * 1
 )
 
 type Room struct {

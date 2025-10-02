@@ -118,6 +118,16 @@ const (
 	ExitMatchmaking    MatchmakingServerMessageType = "ExitMatchmaking"
 )
 
+var matchmakingServerMessageTypes = map[string]struct{}{
+	string(RequestMatchmaking): {},
+	string(ExitMatchmaking):    {},
+}
+
+func IsMatchmakeServerMessageType(t string) bool {
+	_, ok := matchmakingServerMessageTypes[t]
+	return ok
+}
+
 type RequestMatchmakingMessage struct {
 	TypeDiscriminator string        `json:"$type"`
 	UserId            uuidstring.ID `redis:"user_id" json:"user_id"`

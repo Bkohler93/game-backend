@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/bkohler93/game-backend/internal/shared/constants/metadata"
 	"github.com/bkohler93/game-backend/internal/shared/message"
+	"github.com/bkohler93/game-backend/internal/shared/message/metadata"
 	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
@@ -77,7 +77,7 @@ func (b *TransportBus) SendToClient(ctx context.Context, id uuidstring.ID, msg M
 		roomFullMsg := msg.(*RoomFullMessage)
 		md = make(metadata.MetaData)
 		md[metadata.TransitionTo] = metadata.Game
-		md[metadata.RoomID] = roomFullMsg.RoomID.String()
+		md[metadata.RoomIDKey] = metadata.MetaDataValue(roomFullMsg.RoomID.String())
 	}
 
 	return b.transportBus.SendTo(ctx, ClientMessageProducer, id, &message.Envelope{

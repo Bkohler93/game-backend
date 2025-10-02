@@ -3,7 +3,6 @@ package matchmake
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"time"
 
@@ -128,7 +127,7 @@ func (m *Matchmaker) runMatchmakingLoop(ctx context.Context, workerOffset int) e
 				continue
 			}
 			if err != nil {
-				log.Printf("encountered an error claiming next pending task - %v\n", err)
+				log.Printf("error trying to make match - %v\n", err)
 			} else {
 				idleCount = 0 //successfully found pending task and tried to matchmake, reset idle time
 			}
@@ -144,7 +143,7 @@ func (m *Matchmaker) runMatchmakingLoop(ctx context.Context, workerOffset int) e
 				continue
 			}
 			if err != nil {
-				log.Printf("encountered an error claiming next pending task - %v\n", err)
+				log.Printf("error trying to make match - %v\n", err)
 			}
 
 		case err := <-errCh:
@@ -256,7 +255,7 @@ func (m *Matchmaker) attemptMatchmake(ctx context.Context, roomId uuidstring.ID)
 	for _, openRm := range openRooms {
 		combinedRoom, err := m.combineRooms(ctx, rm, openRm)
 		if err != nil {
-			if utils.ErrorsIsAny(err, room.ErrRoomFull, room.ErrDidNotLock) {
+			if utils.ErrorsIsAny(err, room.ErrRoomFull, room.ErrDidNotLock, room.ErrRoomNotFound) {
 				continue
 			}
 			return err
@@ -291,6 +290,15 @@ func (m *Matchmaker) attemptMatchmake(ctx context.Context, roomId uuidstring.ID)
 		if err != nil {
 			return err
 		}
+	} else {
+		err = m.MatchmakingTaskCoordinator.RemoveInProgressTask(ctx, rm.RoomId)
+		if err != nil {
+			return err
+		}
+		// err = m.RoomRepository.DeleteRoom(ctx, rm.RoomId)
+		// if err != nil {
+		// 	return err
+		// }
 	}
 	return nil
 }
@@ -311,6 +319,7 @@ func (m *Matchmaker) combineRooms(ctx context.Context, rm room.Room, rmToJoin ro
 
 	combinedRoom, err = m.RoomRepository.CombineRooms(ctx, rm.RoomId, rmToJoin.RoomId) //this means that "rm" gets absorbed into "openRm",
 	if err != nil {
+		log.Println("error combining rooms - ", err)
 		return combinedRoom, err
 	}
 
@@ -364,7 +373,6 @@ func (m *Matchmaker) processExitMatchmakingRequest(ctx context.Context, msg *Exi
 
 	for _, playerId := range newPlayerIds {
 		playerLeftMsg := NewPlayerLeftRoomMessage(msg.UserId)
-		fmt.Printf("sending message to player[%s] - %v\n", playerId, playerLeftMsg)
 		err = m.TransportBus.SendToClient(ctx, playerId, &playerLeftMsg)
 		if err != nil {
 			log.Printf("failed to send message to client[%s] - %v\n", playerId, err)

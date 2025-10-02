@@ -34,12 +34,15 @@ func main() {
 	}
 
 	taskCoordinator := taskcoordinator.NewGameTaskCoordinator(gameTaskStore)
+	// redisStreamListener := transport.NewRedisStreamListener(ctx, redisClient)
 
 	tf := &game.TransportFactory{
 		GameServerMsgConsumerBuilder: func(ctx context.Context, roomID string) (transport.MessageConsumer, error) {
 			stream := rediskeys.GameServerMessageStream(uuidstring.ID(roomID))
 			consumerGroup := rediskeys.GameServerMessageCGroup(uuidstring.ID(roomID))
 			return transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, roomID)
+			// return transport.NewRedisMessageConsumer(ctx, redisStreamListener, stream), nil
+			// return redisStreamListener.AddConsumer(stream), nil
 		},
 		GameClientMsgProducerBuilder: func() transport.DynamicMessageProducer {
 			return transport.NewRedisDynamicMessageProducer(redisClient, func(clientId uuidstring.ID) string {

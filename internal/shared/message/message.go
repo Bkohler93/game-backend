@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/bkohler93/game-backend/internal/shared/constants/metadata"
+	"github.com/bkohler93/game-backend/internal/shared/message/metadata"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 type ServiceType string
@@ -30,9 +31,51 @@ func NewNoAckEnvelopeContext(e *Envelope) *EnvelopeContext {
 	}
 }
 
+type ClientErrorMessageType string
+
+const (
+	ClientDisconnect ClientErrorMessageType = "ClientDisconnect"
+	ClientQuit       ClientErrorMessageType = "ClientQuit"
+)
+
+// string(message.ClientDisconnect): func() message.Message { return &message.ClientDisconnectMessage{} },
+// string(message.ClientQuit):       func() message.Message { return &message.ClientQuitMessage{} },
+type ClientDisconnectMessage struct {
+	TypeDiscriminator string        `json:"$type"`
+	UserId            uuidstring.ID `json:"user_id"`
+}
+
+func NewClientDisconnectMessage(userId uuidstring.ID) *ClientDisconnectMessage {
+	return &ClientDisconnectMessage{
+		UserId:            userId,
+		TypeDiscriminator: string(ClientDisconnect),
+	}
+}
+
+func (m *ClientDisconnectMessage) GetDiscriminator() string {
+	return string(ClientDisconnect)
+}
+
+type ClientQuitMessage struct {
+	TypeDiscriminator string        `json:"$type"`
+	UserId            uuidstring.ID `json:"user_id"`
+}
+
+func NewClientQuitMessage(userId uuidstring.ID) *ClientQuitMessage {
+	return &ClientQuitMessage{
+		UserId:            userId,
+		TypeDiscriminator: string(ClientQuit),
+	}
+}
+
+func (m *ClientQuitMessage) GetDiscriminator() string {
+	return string(ClientQuit)
+}
+
 type MessageContext struct {
-	Msg     Message
-	AckFunc func(ctx context.Context) error
+	Msg      Message
+	AckFunc  func(ctx context.Context) error
+	Metadata *metadata.MetaData
 }
 
 type Message interface {

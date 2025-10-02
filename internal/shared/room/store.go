@@ -20,12 +20,14 @@ var (
 	ErrDidNotUnlock       = errors.New("failed to unlock room")
 	ErrDidNotLock         = errors.New("failed to lock room")
 	ErrIndexAlreadyExists = errors.New("index already exists")
+	ErrRoomNotFound       = errors.New("room not found")
 )
 
 type Store interface {
 	CreateRoomIndex(context.Context) error
 	GetRoom(context.Context, uuidstring.ID) (Room, error)
 	InsertRoom(context.Context, Room) error
+	DeleteRoom(context.Context, uuidstring.ID) error
 	QueryOpenRooms(ctx context.Context, region string, minAvgSkill, maxAvgSkill, maxPlayerCount int) ([]Room, error)
 	JoinRoom(ctx context.Context, roomId uuidstring.ID, userId uuidstring.ID, userSkill int) (Room, error) //returns number of players in room
 	LockRoom(ctx context.Context, roomId uuidstring.ID) (uuidstring.ID, error)
@@ -37,6 +39,10 @@ type Store interface {
 type RedisStore struct {
 	rdb *redis.Client
 	lua map[string]*redis.Script
+}
+
+func (s *RedisStore) DeleteRoom(ctx context.Context, roomId uuidstring.ID) error {
+	return s.rdb.Del(ctx, rediskeys.RoomsJSONObject(roomId)).Err()
 }
 
 func (store *RedisStore) RemovePlayer(ctx context.Context, roomId uuidstring.ID, userId uuidstring.ID, userSkill int) ([]uuidstring.ID, error) {
@@ -58,6 +64,9 @@ func (store *RedisStore) CombineRooms(ctx context.Context, roomOneId uuidstring.
 	keys := []string{rediskeys.RoomsJSONObject(roomOneId), rediskeys.RoomsJSONObject(roomTwoId)}
 	var result, err = store.lua[files.LuaCombineRooms].Run(ctx, store.rdb, keys, constants.MaxPlayerCount).Result()
 	if err != nil {
+		if err.Error() == "ROOM_NOT_FOUND" {
+			return rm, ErrRoomNotFound
+		}
 		return rm, err
 	}
 	rm, err = redisutils.JsonTo[Room](result)

@@ -26,6 +26,11 @@ func main() {
 		panic(err)
 	}
 
+	redisWriteClient, err := redisutils.NewRedisMatchmakeClient(ctx)
+	if err != nil {
+		panic(err)
+	}
+
 	roomStore, err := room.NewRedisRoomStore(redisClient)
 	if err != nil {
 		panic(err)
@@ -35,22 +40,26 @@ func main() {
 		panic(err)
 	}
 
+	streamListener := transport.NewRedisStreamListener(ctx, redisClient)
+
 	transportFactory := &gateway.TransportFactory{
 		MatchmakingClientMsgConsumerBuilder: func(ctx context.Context, clientId string) (transport.MessageConsumer, error) {
 			stream := rediskeys.MatchmakingClientMessageStream(uuidstring.ID(clientId))
-			consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
-			return transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, clientId)
+			// consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
+			// return transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, clientId)
+			return streamListener.AddConsumer(stream), nil
 		},
 		GameClientMsgConsumerBuilder: func(ctx context.Context, clientId string) (transport.MessageConsumer, error) {
 			stream := rediskeys.GameClientMessageStream(uuidstring.ID(clientId))
-			consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
-			return transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, clientId)
+			// consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
+			// return transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, clientId)
+			return streamListener.AddConsumer(stream), nil
 		},
 		MatchmakingServerMsgProducerBuilder: func() transport.MessageProducer {
-			return transport.NewRedisMessageProducer(redisClient, rediskeys.MatchmakingServerMessageStream)
+			return transport.NewRedisMessageProducer(redisWriteClient, rediskeys.MatchmakingServerMessageStream)
 		},
 		GameplayServerMsgProducerBuilder: func() transport.DynamicMessageProducer {
-			return transport.NewRedisDynamicMessageProducer(redisClient, rediskeys.GameServerMessageStream)
+			return transport.NewRedisDynamicMessageProducer(redisWriteClient, rediskeys.GameServerMessageStream)
 		},
 	}
 

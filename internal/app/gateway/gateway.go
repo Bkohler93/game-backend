@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bkohler93/game-backend/internal/shared/room"
+	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/gorilla/websocket"
 	"golang.org/x/sync/errgroup"
 )
@@ -32,9 +33,9 @@ func NewGateway(addr string, rr *room.Repository, transportFactory *TransportFac
 
 func (g *Gateway) Start(ctx context.Context) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ws/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		log.Println("health check received at \"\\\"")
+		log.Println("health check received at '/ws/health'")
 		_, err := fmt.Fprintln(w, "OK")
 		if err != nil {
 			log.Println(err)
@@ -68,8 +69,7 @@ func (g *Gateway) Start(ctx context.Context) {
 		eg.Go(func() error { return c.ReadPump(ctx) })
 
 		if err = eg.Wait(); err != nil {
-			if errors.Is(err, ErrClientClosedConnection) {
-			} else {
+			if !utils.ErrorsIsAny(err, ErrClientClosedConnection, ErrClientDisconnected) {
 				log.Println("worker ended due to unknown error -", err)
 			}
 		}

@@ -8,8 +8,8 @@ import (
 
 	"github.com/bkohler93/game-backend/internal/app/game"
 	"github.com/bkohler93/game-backend/internal/app/matchmake"
-	"github.com/bkohler93/game-backend/internal/shared/constants/metadata"
 	"github.com/bkohler93/game-backend/internal/shared/message"
+	"github.com/bkohler93/game-backend/internal/shared/message/metadata"
 	"github.com/bkohler93/game-backend/internal/shared/transport"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"golang.org/x/sync/errgroup"
@@ -23,29 +23,42 @@ type Router struct {
 
 func (r *Router) RouteClientTraffic(ctx context.Context, client *Client) {
 	eg, eCtx := errgroup.WithContext(ctx)
+	handler := NewMessageHandler(ctx, r, client)
 
 	eg.Go(func() error {
-		currentGamePhaseReceiveMethod := r.receiveMatchmaking
-		for currentGamePhaseReceiveMethod != nil {
-			var err error
-			currentGamePhaseReceiveMethod, err = currentGamePhaseReceiveMethod(eCtx, client)
-			if err != nil {
-				break
-			}
-		}
-		return nil
+		return handler.StartListening(eCtx)
 	})
 
+	// eg.Go(func() error {
+	// 	for {
+	// 		select {
+	// 		case <-eCtx.Done():
+	// 			return nil
+	// 		case clientMsg := <-handler.fromServerCh:
+	// 			client.writeChan <- clientMsg
+	// 		}
+	// 	}
+	// currentGamePhaseReceiveMethod := r.receiveMatchmaking
+	// for currentGamePhaseReceiveMethod != nil {
+	// 	var err error
+	// 	currentGamePhaseReceiveMethod, err = currentGamePhaseReceiveMethod(eCtx, client)
+	// 	if err != nil {
+	// 		break
+	// 	}
+	// }
+	// return nil
+	// })
+
 	eg.Go(func() error {
-		handler := NewServerMessageHandler(r, client)
 		for {
 			select {
 			case <-eCtx.Done():
-				handler.HandleCtxDone()
 				return nil
-			case outMsg := <-client.routeChan:
-				handler.HandleOutMsg(eCtx, outMsg)
-				if err := outMsg.AckFunc(ctx); err != nil {
+			case err := <-client.errChan:
+				handler.HandleClientErr(err)
+			case serverMsg := <-client.routeChan:
+				handler.RouteServerMsg(eCtx, serverMsg)
+				if err := serverMsg.AckFunc(ctx); err != nil {
 					log.Println("trouble Acknowledging message that was just sent -", err)
 				}
 			}
@@ -64,27 +77,87 @@ const (
 	GameServerMessageState
 )
 
-type ServerMessageHandler struct {
-	router            *Router
-	client            *Client
-	state             ServerMessageHandlerState
-	gameProducer      transport.DynamicMessageProducer
-	matchmakeProducer transport.MessageProducer
+type MessageHandler struct {
+	router              *Router
+	client              *Client
+	state               ServerMessageHandlerState
+	fromServerCh        chan *message.EnvelopeContext
+	gameProducer        transport.DynamicMessageProducer
+	matchmakeProducer   transport.MessageProducer
+	matchmakingConsumer transport.MessageConsumer
+	gameConsumer        transport.MessageConsumer
 }
 
-func NewServerMessageHandler(router *Router, client *Client) *ServerMessageHandler {
-	s := &ServerMessageHandler{
+func NewMessageHandler(ctx context.Context, router *Router, client *Client) *MessageHandler {
+	s := &MessageHandler{
 		router:            router,
 		client:            client,
 		state:             MatchmakingServerMessageState,
+		fromServerCh:      make(chan *message.EnvelopeContext),
 		gameProducer:      router.transportFactory.GameplayServerMsgProducerBuilder(),
 		matchmakeProducer: router.transportFactory.MatchmakingServerMsgProducerBuilder(),
 	}
+	matchmakingMsgConsumer, err := router.transportFactory.MatchmakingClientMsgConsumerBuilder(ctx, client.ID.String())
+	if err != nil {
+		log.Printf("error creating matchmake client message consumer - %v\n", err)
+	}
+	s.matchmakingConsumer = matchmakingMsgConsumer
+
+	gameMsgConsumer, err := router.transportFactory.GameClientMsgConsumerBuilder(ctx, client.ID.String())
+	if err != nil {
+		log.Printf("error creating Game Client Message consumer - %v\n", err)
+	}
+	s.gameConsumer = gameMsgConsumer
+
 	return s
 }
 
-func (s *ServerMessageHandler) HandleCtxDone() {
-	if s.state == MatchmakingServerMessageState {
+func (s *MessageHandler) StartListening(ctx context.Context) error {
+	matchmakeCh, matchmakeErrCh := s.matchmakingConsumer.StartReceiving(ctx)
+	gameCh, gameErrCh := s.gameConsumer.StartReceiving(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-matchmakeErrCh:
+			return err
+		case err := <-gameErrCh:
+			return err
+		case envCtx := <-matchmakeCh:
+			s.state = MatchmakingServerMessageState
+			s.handleMatchmakingMessage(envCtx)
+		case envCtx := <-gameCh:
+			s.state = GameServerMessageState
+			s.handleGameMessage(envCtx)
+		}
+	}
+}
+
+// handleMatchmakingMessage processes messages from the matchmaking server
+func (s *MessageHandler) handleMatchmakingMessage(envCtx *message.EnvelopeContext) {
+	if envCtx.Env.MetaData[metadata.TransitionTo] == metadata.Game {
+		roomId := envCtx.Env.MetaData[metadata.RoomIDKey]
+		if roomId == "" {
+			log.Println("did not receive room id")
+		}
+		s.client.RoomID = uuidstring.ID(roomId)
+		s.state = GameServerMessageState // Transition the state
+	}
+	s.client.writeChan <- envCtx
+}
+
+// handleGameMessage processes messages from the game server
+func (s *MessageHandler) handleGameMessage(envCtx *message.EnvelopeContext) {
+	nextState := envCtx.Env.MetaData[metadata.TransitionTo]
+	if nextState == metadata.GameOver {
+		s.state = MatchmakingServerMessageState // Transition back to matchmaking
+	}
+	s.client.writeChan <- envCtx
+}
+
+func (s *MessageHandler) HandleClientErr(err error) {
+	switch s.state {
+	case MatchmakingServerMessageState:
 		msg := matchmake.NewExitMatchmakingMessage(s.client.ID)
 		bytes, _ := json.Marshal(msg)
 		err := s.matchmakeProducer.Send(context.Background(), &message.Envelope{
@@ -94,31 +167,43 @@ func (s *ServerMessageHandler) HandleCtxDone() {
 		if err != nil {
 			log.Printf("error sending matchmaking disconnect - %v", err)
 		}
-	} else {
-		// TODO: implement game server disconnect
+	case GameServerMessageState:
+		var msg any
+		switch err {
+		case ErrClientClosedConnection:
+			msg = message.NewClientQuitMessage(s.client.ID)
+		case ErrClientDisconnected:
+			msg = message.NewClientDisconnectMessage(s.client.ID)
+		default:
+			log.Printf("received unknown error message - %v", err)
+		}
+		bytes, _ := json.Marshal(msg)
+		err := s.gameProducer.SendTo(context.Background(), s.client.RoomID, &message.Envelope{
+			Type:    message.GameService,
+			Payload: bytes,
+		})
+		if err != nil {
+			log.Printf("error sending game server disconnect message - %v", err)
+		}
 	}
 }
 
-func (s *ServerMessageHandler) HandleOutMsg(ctx context.Context, envCtx *message.EnvelopeContext) {
+func (s *MessageHandler) RouteServerMsg(ctx context.Context, envCtx *message.EnvelopeContext) {
 	switch message.ServiceType(envCtx.Env.Type) {
 	case message.MatchmakingService:
-		if s.state != MatchmakingServerMessageState {
-			log.Println("Warning: Received matchmaking message in gameplay state")
-		}
+		s.state = MatchmakingServerMessageState
 		err := s.matchmakeProducer.Send(ctx, envCtx.Env)
 		if err != nil {
 			log.Println("failed to send matchmaking message - ", err)
 		}
 	case message.GameService:
-		if s.state != GameServerMessageState {
-			s.state = GameServerMessageState
-		}
+		s.state = GameServerMessageState
 		err := s.gameProducer.SendTo(ctx, s.client.RoomID, envCtx.Env)
 		if err != nil {
 			log.Println("failed to send gameplay message - ", err)
 		}
 	default:
-		log.Printf("received invalid message type - %v", envCtx.Env.Type)
+		log.Printf("Gateway received invalid out-message type - %v - data %v\n", envCtx.Env.Type, envCtx.Env)
 	}
 }
 
@@ -139,7 +224,7 @@ func (r *Router) receiveMatchmaking(ctx context.Context, client *Client) (RouteF
 			return nil, err
 		case env := <-envCh:
 			if env.Env.MetaData[metadata.TransitionTo] == metadata.Game {
-				roomId := env.Env.MetaData[metadata.RoomID]
+				roomId := env.Env.MetaData[metadata.RoomIDKey]
 				if roomId == "" {
 					log.Println("did not receive room id")
 				}
@@ -183,14 +268,13 @@ func (r *Router) receiveGame(ctx context.Context, client *Client) (RouteFunc, er
 }
 
 func getServiceType(messageType string) message.ServiceType {
-	switch messageType {
-	case string(matchmake.RequestMatchmaking), string(matchmake.ExitMatchmaking):
-		return message.MatchmakingService
-	case string(game.ConfirmMatch), string(game.GameFirstGuess), string(game.GameGuess), string(game.SetupFinalize), string(game.SetupPlacementAttempt), string(game.SetupUndo):
+	if game.IsGameServerMessageType(messageType) {
 		return message.GameService
-	default:
-		return "" // or return an error/unknown service type
+	} else if matchmake.IsMatchmakeServerMessageType(messageType) {
+		return message.MatchmakingService
 	}
+	return ""
+
 }
 
 //func NewClientTransportBusFactory(rdb *redis.Client, matchmakingClientMsgConsumerBuilder transport.MessageGroupConsumerBuilderFunc, matchmakingServerMessageProducerBuilder transport.MessageProducerBuilderFunc) *TransportFactory {
