@@ -40,8 +40,8 @@ func NewHub(r *Router) *Hub {
 						log.Printf("error closing client's(%s) websocket conn - %v", c.ID.String(), err)
 					}
 				}
-				cancelFunc := h.Clients[c]
-				cancelFunc()
+				cancelClientCtxFunc := h.Clients[c]
+				cancelClientCtxFunc()
 				delete(h.Clients, c)
 				log.Printf("unregistered client[%s]\n", c.ID)
 			}

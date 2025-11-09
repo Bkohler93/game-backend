@@ -52,6 +52,7 @@ func main() {
 	matchmakingClientMessageProducer := matchmake.NewRedisClientMessageProducer(redisClient)
 
 	redisStreamListener := transport.NewRedisStreamListener(ctx, redisClient)
+	matchmakingServerMessageConsumer := redisStreamListener.AddConsumer(rediskeys.MatchmakingServerMessageStream)
 	// matchmakingServerMessageConsumer, err := matchmake.NewRedisMatchmakingServerMessageConsumer(ctx, redisClient, serverId.String())
 
 	matchmakeWorkerNotifier := matchmake.NewRedisWorkerNotifierBroadcastProducer(redisClient)
@@ -60,7 +61,7 @@ func main() {
 		panic(err)
 	}
 	// bus := matchmake.NewBus(matchmakingServerMessageConsumer, matchmakingClientMessageProducer, matchmakeWorkerNotifier, matchmakeWorkerNotifyListener)
-	bus := matchmake.NewBus(redisStreamListener.AddConsumer(rediskeys.MatchmakingServerMessageStream), matchmakingClientMessageProducer, matchmakeWorkerNotifier, matchmakeWorkerNotifyListener)
+	bus := matchmake.NewBus(matchmakingServerMessageConsumer, matchmakingClientMessageProducer, matchmakeWorkerNotifier, matchmakeWorkerNotifyListener)
 
 	m := matchmake.Matchmaker{
 		TransportBus:               bus,

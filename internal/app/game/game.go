@@ -526,6 +526,8 @@ func (c *Gameplay) HandleAction(ctx context.Context, msg message.Message) {
 			if turnResult == Win {
 				c.g.ProcessGameResult(m.UserId)
 				c.g.NextPhase(ctx)
+			} else if turnResult == GoAgain {
+				return
 			} else {
 				c.StartPlayerTurn(c.g.OtherPlayerId(m.UserId), m.UserId)
 			}

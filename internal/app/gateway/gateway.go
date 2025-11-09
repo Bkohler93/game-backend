@@ -70,7 +70,7 @@ func (g *Gateway) Start(ctx context.Context) {
 
 		if err = eg.Wait(); err != nil {
 			if !utils.ErrorsIsAny(err, ErrClientClosedConnection, ErrClientDisconnected) {
-				log.Println("worker ended due to unknown error -", err)
+				log.Println("client connection ended due to unknown error -", err)
 			}
 		}
 
