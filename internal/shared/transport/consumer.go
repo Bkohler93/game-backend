@@ -281,6 +281,7 @@ func (l *RedisStreamListener) AddConsumer(ctx context.Context, stream string) (*
 	l.msgChannels[stream] = make(chan *message.EnvelopeContext, 100)
 	l.errChannels[stream] = make(chan error, 10)
 	l.streamsMu.Unlock()
+	fmt.Printf("stinky stinky\n")
 	req := newStreamReq(stream)
 	l.AddStreamCh <- req
 
