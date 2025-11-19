@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sync"
 
 	"github.com/joho/godotenv"
 )
@@ -34,4 +35,21 @@ func ErrorsIsAny(err error, errs ...error) bool {
 		}
 	}
 	return false
+}
+
+type ThreadSafeBool struct {
+	mu  sync.Mutex
+	val bool
+}
+
+func (tsb *ThreadSafeBool) Set(b bool) {
+	tsb.mu.Lock()
+	defer tsb.mu.Unlock()
+	tsb.val = b
+}
+
+func (tsb *ThreadSafeBool) Is(b bool) bool {
+	tsb.mu.Lock()
+	defer tsb.mu.Unlock()
+	return tsb.val == b
 }

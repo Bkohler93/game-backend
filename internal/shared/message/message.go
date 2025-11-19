@@ -1,46 +1,103 @@
 package message
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"reflect"
+
+	"github.com/bkohler93/game-backend/internal/shared/message/metadata"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 type ServiceType string
 
 const (
 	MatchmakingService ServiceType = "MatchmakingService"
+	SetupService       ServiceType = "SetupService"
 	GameService        ServiceType = "GameService"
 )
 
+type EnvelopeContext struct {
+	Env     *Envelope
+	AckFunc func(ctx context.Context) error
+}
+
+func NewNoAckEnvelopeContext(e *Envelope) *EnvelopeContext {
+	return &EnvelopeContext{
+		Env: e,
+		AckFunc: func(ctx context.Context) error {
+			return nil
+		},
+	}
+}
+
+type ClientErrorMessageType string
+
+const (
+	ClientDisconnect ClientErrorMessageType = "ClientDisconnect"
+	ClientQuit       ClientErrorMessageType = "ClientQuit"
+)
+
+// string(message.ClientDisconnect): func() message.Message { return &message.ClientDisconnectMessage{} },
+// string(message.ClientQuit):       func() message.Message { return &message.ClientQuitMessage{} },
+type ClientDisconnectMessage struct {
+	TypeDiscriminator string        `json:"$type"`
+	UserId            uuidstring.ID `json:"user_id"`
+}
+
+func NewClientDisconnectMessage(userId uuidstring.ID) *ClientDisconnectMessage {
+	return &ClientDisconnectMessage{
+		UserId:            userId,
+		TypeDiscriminator: string(ClientDisconnect),
+	}
+}
+
+func (m *ClientDisconnectMessage) GetDiscriminator() string {
+	return string(ClientDisconnect)
+}
+
+type ClientQuitMessage struct {
+	TypeDiscriminator string        `json:"$type"`
+	UserId            uuidstring.ID `json:"user_id"`
+}
+
+func NewClientQuitMessage(userId uuidstring.ID) *ClientQuitMessage {
+	return &ClientQuitMessage{
+		UserId:            userId,
+		TypeDiscriminator: string(ClientQuit),
+	}
+}
+
+func (m *ClientQuitMessage) GetDiscriminator() string {
+	return string(ClientQuit)
+}
+
+type MessageContext struct {
+	Msg      Message
+	AckFunc  func(ctx context.Context) error
+	Metadata *metadata.MetaData
+}
+
 type Message interface {
 	Discriminable
-	Identifiable
 }
 
 type Discriminable interface {
 	GetDiscriminator() string
 }
 
-type Identifiable interface {
-	IDGettable
-	IDSettable
+type AckFuncAccessor interface {
+	Ack(context.Context) error
+	SetAck(func(context.Context) error)
 }
 
-type IDGettable interface {
-	GetID() string
+type EmptyMessage struct{}
+
+func (e EmptyMessage) GetDiscriminator() string {
+	return ""
 }
 
-type IDSettable interface {
-	SetID(string)
-}
-
-var PrintTypeDiscriminator = func(i any) string {
-	return reflect.TypeOf(i).String()
-}
-
-func UnmarshalWrappedType[T Discriminable](data []byte, typeRegistry map[string]func() T) (T, error) {
+func UnmarshalWrappedType[T Message](data []byte, typeRegistry map[string]func() T) (T, error) {
 	var zeroValue T
 	var temp struct {
 		TypeDiscriminator string `json:"$type"`
@@ -61,45 +118,20 @@ func UnmarshalWrappedType[T Discriminable](data []byte, typeRegistry map[string]
 }
 
 type Envelope struct {
-	Type    string          `json:"type"`
-	Payload json.RawMessage `json:"payload"` // json.RawMessage holds the raw JSON bytes
+	Type     ServiceType       `json:"type"`
+	Payload  json.RawMessage   `json:"payload"` // json.RawMessage holds the raw JSON bytes
+	MetaData metadata.MetaData `json:"metadata"`
+}
+
+func (e *Envelope) EnsureMetaData() {
+	if e.MetaData == nil {
+		e.MetaData = make(metadata.MetaData)
+	}
 }
 
 func NewEnvelopeOf[T ~string](msgType T, Payload json.RawMessage) Envelope {
 	return Envelope{
-		Type:    string(msgType),
+		Type:    ServiceType(msgType),
 		Payload: Payload,
 	}
-}
-
-func (e *Envelope) ToMap() map[string]any {
-	return map[string]any{
-		"type":    e.Type,
-		"payload": string(e.Payload),
-	}
-}
-
-func (e *Envelope) FromMap(data map[string]any) error {
-	dataType, ok := data["type"].(string)
-	if !ok {
-		return errors.New("invalid stored in 'type' property")
-	}
-	payload, ok := data["payload"].(json.RawMessage)
-	if !ok {
-		return errors.New("invalid stored in 'payload' property")
-	}
-	e.Type = dataType
-	e.Payload = payload
-	return nil
-}
-
-func DecodePayload[T any](payload json.RawMessage) (*T, error) {
-	var msg T
-	err := json.Unmarshal(payload, &msg)
-	return &msg, err
-}
-
-type MapSerializable interface {
-	ToMap() map[string]interface{}
-	FromMap(map[string]interface{}) error
 }

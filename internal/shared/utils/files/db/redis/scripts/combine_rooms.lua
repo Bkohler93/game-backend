@@ -70,5 +70,8 @@ end
 -- Save the updated object
 redis.call("JSON.SET", roomTwoKey, "$", cjson.encode(roomTwo))
 
+-- Delete the absorbed room
+redis.call("DEL", roomOneKey)
+
 -- Return the combined room object (roomTwo
 return cjson.encode(roomTwo)

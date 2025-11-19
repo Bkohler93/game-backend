@@ -16,6 +16,8 @@ func NewRedisMatchmakeClient(ctx context.Context) (*redis.Client, error) {
 		DB:       0,                                 // use default DB
 		Password: os.Getenv("REDIS_PW"),
 		Protocol: 2,
+		PoolSize: 20,
+		// MinIdleConns: 20,
 	})
 
 	_, err := rdb.Ping(ctx).Result()

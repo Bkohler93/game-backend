@@ -1,6 +1,7 @@
 package taskcoordinator
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -10,9 +11,10 @@ import (
 )
 
 func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
-	ctx := t.Context()
+	// ctx := t.Context()
 
-	startup := func(t *testing.T) (store *RedisMatchmakingTaskStore, flush func()) {
+	startup := func(t *testing.T) (store *RedisMatchmakingTaskStore, flush func(), ctx context.Context) {
+		ctx = t.Context()
 		c, err := redisutils.NewRedisMatchmakeClient(ctx)
 		if err != nil {
 			panic(err)
@@ -31,7 +33,8 @@ func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
 	}
 
 	t.Run("test adding and getting pending task", func(t *testing.T) {
-		store, flushRedis := startup(t)
+		store, flushRedis, ctx := startup(t)
+
 		defer flushRedis()
 
 		roomID := uuidstring.NewID()
@@ -48,7 +51,7 @@ func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
 	})
 
 	t.Run("get pending task when no available tasks should return error", func(t *testing.T) {
-		store, flushRedis := startup(t)
+		store, flushRedis, ctx := startup(t)
 		defer flushRedis()
 		roomID := uuidstring.NewID()
 
@@ -61,7 +64,7 @@ func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
 		if err == nil {
 			t.Errorf("expected non-nil err, got - %v", err)
 		}
-		if !errors.Is(err, NoPendingTasksAvailableErr) {
+		if !errors.Is(err, ErrNoTasksAvailable) {
 			t.Errorf("expected no available pending tasks err, got - %v", err)
 		}
 		if rID != "" {
@@ -70,7 +73,7 @@ func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
 	})
 
 	t.Run("get pending task with time=now should claim task successfully", func(t *testing.T) {
-		store, flushRedis := startup(t)
+		store, flushRedis, ctx := startup(t)
 		defer flushRedis()
 
 		roomID := uuidstring.NewID()
@@ -91,7 +94,7 @@ func TestMatchmakingRedisStore_PendingTasks(t *testing.T) {
 	})
 
 	t.Run("get pending task should return the earlier task successfully", func(t *testing.T) {
-		store, flushRedis := startup(t)
+		store, flushRedis, ctx := startup(t)
 		defer flushRedis()
 
 		roomOneID := uuidstring.NewID()

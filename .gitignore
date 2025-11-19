@@ -12,6 +12,7 @@
 *.pem
 *.deploy.yml
 build/push_images.sh
+*.csv
 
 # Test binary, built with `go test -c`
 *.test

@@ -88,8 +88,11 @@ for i in $(seq 1 "$REDIS_READY_TIMEOUT"); do
 done
 
 echo "--- Starting other services ---"
-run_service "gateway" ./dev/matchmake/run_gateway.sh
-run_service "matchmaker" ./dev/matchmake/run_matchmaker.sh
+run_service "gateway" ./dev/run_gateway.sh
+run_service "matchmaker" ./dev/run_matchmaker.sh
+run_service "auth" ./dev/run_auth.sh
+run_service "game" ./dev/run_game.sh
+run_service "janitor" ./dev/run_janitor.sh
 
 echo "--- All services started. Press Ctrl+C to stop. ---"
 

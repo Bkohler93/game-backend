@@ -8,54 +8,57 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bkohler93/game-backend/internal/app/gateway/client"
 	"github.com/bkohler93/game-backend/internal/shared/room"
+	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/gorilla/websocket"
 	"golang.org/x/sync/errgroup"
 )
 
 type Gateway struct {
-	clientTransportBusFactory *client.ClientTransportBusFactory
-	roomRepository            *room.Repository
-	addr                      string
-	hub                       *Hub
+	roomRepository *room.Repository
+	addr           string
+	hub            *Hub
 }
 
-func NewGateway(addr string, rr *room.Repository, clientTransportBusFactory *client.ClientTransportBusFactory) Gateway {
+func NewGateway(addr string, rr *room.Repository, transportFactory *TransportFactory) Gateway {
+	r := &Router{
+		transportFactory: transportFactory,
+	}
 	return Gateway{
-		clientTransportBusFactory: clientTransportBusFactory,
-		roomRepository:            rr,
-		addr:                      addr,
-		hub:                       NewHub(),
+		roomRepository: rr,
+		addr:           addr,
+		hub:            NewHub(r),
 	}
 }
 
 func (g *Gateway) Start(ctx context.Context) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ws/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		log.Println("health check received at \"\\\"")
+		log.Println("health check received at '/ws/health'")
 		_, err := fmt.Fprintln(w, "OK")
 		if err != nil {
 			log.Println(err)
 		}
 	})
+
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		eg, ctx := errgroup.WithContext(ctx)
-
-		c, err := client.NewClient(ctx, w, r, g.clientTransportBusFactory)
+		c, err := NewClient(ctx, w, r)
 		if err != nil {
 			log.Printf("failed to initialize client websocket - %v\n", err)
 			return
 		}
+		fmt.Printf("...\n")
 		defer func(conn *websocket.Conn) {
 			err := conn.Close()
 			if err != nil {
 				log.Printf("failed to close connection - %v\n", err)
 			}
 		}(c.Conn)
-
+		fmt.Printf("sending on registerCh\n")
 		g.hub.RegisterCh <- c
+		fmt.Printf("sent on registerCh\n")
 		eg.Go(func() error {
 			return c.PingLoop(ctx)
 		})
@@ -64,18 +67,11 @@ func (g *Gateway) Start(ctx context.Context) {
 			return c.WritePump(ctx)
 		})
 
-		eg.Go(func() error {
-			return c.ReadPump(ctx)
-		})
-
-		eg.Go(func() error {
-			return c.ListenToServices(ctx)
-		})
+		eg.Go(func() error { return c.ReadPump(ctx) })
 
 		if err = eg.Wait(); err != nil {
-			if errors.Is(err, client.ErrClientClosedConnection) {
-			} else {
-				log.Println("worker ended due to unknown error -", err)
+			if !utils.ErrorsIsAny(err, ErrClientClosedConnection, ErrClientDisconnected) {
+				log.Println("client connection ended due to unknown error -", err)
 			}
 		}
 

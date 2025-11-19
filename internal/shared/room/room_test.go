@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bkohler93/game-backend/internal/app/game"
+	"github.com/bkohler93/game-backend/internal/shared/constants"
 	"github.com/bkohler93/game-backend/internal/shared/utils/files"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 	"github.com/bkohler93/game-backend/pkg/uuidstring"
@@ -15,21 +15,21 @@ import (
 
 func TestNewRedisRoomStoreMethods(t *testing.T) {
 	outerCtx := t.Context()
-	var store *RedisStore
+	var store Store
 	var randomRoom Room
+	client, err := redisutils.NewRedisMatchmakeClient(outerCtx)
+	if err != nil {
+		t.Errorf("trouble creating redis client - %v", err)
+	}
 
 	t.Cleanup(func() {
 		ctx := context.Background()
-		err := store.rdb.FlushDB(ctx).Err()
+		err := client.FlushDB(ctx).Err()
 		if err != nil {
 			panic("failed to flush redis db - " + err.Error())
 		}
 	})
 	t.Run("create new redis room Store", func(t *testing.T) {
-		client, err := redisutils.NewRedisMatchmakeClient(outerCtx)
-		if err != nil {
-			t.Errorf("trouble creating redis client - %v", err)
-		}
 
 		store, err = NewRedisRoomStore(client)
 		if err != nil {
@@ -64,7 +64,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 			t.Errorf("failed to create index - %v", err)
 		}
 
-		info, err := store.rdb.FTInfo(ctx, RedisRoomIndex).Result()
+		info, err := client.FTInfo(ctx, RedisRoomIndex).Result()
 		if err != nil {
 			t.Errorf("should not result in an error when retrieving index info - %v", err)
 		}
@@ -135,7 +135,7 @@ func TestNewRedisRoomStoreMethods(t *testing.T) {
 		ctx := t.Context()
 		userId := uuidstring.NewID()
 		userSkill := 100
-		_, err := store.QueryOpenRooms(ctx, "na", 90, 120, game.MaxPlayers)
+		_, err := store.QueryOpenRooms(ctx, "na", 90, 120, constants.MaxPlayerCount)
 		if err != nil {
 			t.Errorf("query rooms resulted in an error - %v", err)
 		}

@@ -27,6 +27,7 @@ const (
 )
 
 func (j *Janitor) Start(ctx context.Context) {
+	log.Println("started cleanup services")
 	t := time.NewTicker(cleanupFrequency)
 	for {
 		select {

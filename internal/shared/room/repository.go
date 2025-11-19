@@ -15,10 +15,14 @@ type Repository struct {
 	store Store
 }
 
+func (r *Repository) DeleteRoom(ctx context.Context, roomId uuidstring.ID) error {
+	return r.store.DeleteRoom(ctx, roomId)
+}
+
 func (r *Repository) QueryOpenRooms(ctx context.Context, req *QueryRoomRequest) ([]Room, error) {
 	minSkill, maxSkill := CalculateMinMaxSkill(req.Skill, req.TimeCreated)
 
-	rooms, err := r.store.QueryOpenRooms(ctx, req.Region, minSkill, maxSkill, 2) //TODO the '2' magic number should be a constant used for whatever game is being queried for
+	rooms, err := r.store.QueryOpenRooms(ctx, req.Region, minSkill, maxSkill, req.MaxAllowablePlayers)
 	filtered := rooms[:0]
 	for _, rm := range rooms {
 		if rm.RoomId != req.RoomId {
@@ -37,7 +41,14 @@ func (r *Repository) CreateRoom(ctx context.Context, room Room) error {
 }
 
 func (r *Repository) CreateRoomIndex(ctx context.Context) error {
-	return r.store.CreateRoomIndex(ctx)
+	err := r.store.CreateRoomIndex(ctx)
+	if err != nil {
+		if err.Error() == "index already exists" || err.Error() == "Index already exists" {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *Repository) GetRoom(ctx context.Context, roomID uuidstring.ID) (Room, error) {

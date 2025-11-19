@@ -49,8 +49,8 @@ func TestRedisMatchmakingTransportBus(t *testing.T) {
 			for {
 				select {
 				case msg := <-msgCh:
-					if msg != "" {
-						t.Errorf("expected empty message got - %s", msg)
+					if msg.Type != "" {
+						t.Errorf("expected empty message got - %v", msg)
 					}
 					timer.Stop()
 					return

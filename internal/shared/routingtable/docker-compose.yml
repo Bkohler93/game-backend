@@ -1,0 +1,6 @@
+services:
+  redis:
+    image: redis:latest
+    container_name: redis-for-tests
+    ports:
+      - "6379:6379" # Maps container port 6379 to host port 6379
