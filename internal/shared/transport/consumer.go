@@ -84,37 +84,39 @@ func newStreamReq(stream string) *streamReq {
 }
 
 type RedisStreamListener struct {
-	AddStreamCh     chan *streamReq
-	RemoveStreamCh  chan string
 	ctx             context.Context
 	conn            *redis.Conn
-	rdb             *redis.Client
+	rdb             *redis.Client //used to cancel running XRead
 	connID          int64
 	streams         []string
 	lastReceivedIDs []string
 	streamsMu       sync.RWMutex
 	msgChannels     map[string]chan *message.EnvelopeContext
-	errChannels     map[string]chan error
+	msgMu           sync.Mutex
 	stopListeningCh chan any
 	stoppedCh       chan any
 }
 
-func NewRedisStreamListener(ctx context.Context, rdb *redis.Client) *RedisStreamListener {
+func NewRedisStreamListener(ctx context.Context, rdb *redis.Client, streams []string) *RedisStreamListener {
 	conn := rdb.Conn()
-	//connID := conn.ClientID(ctx).Val()
+	connID := conn.ClientID(ctx).Val()
+	var streamIDs []string
+	for range streams {
+		streamIDs = append(streamIDs, "0-0")
+	}
 
 	listener := &RedisStreamListener{
-		ctx:  ctx,
-		rdb:  rdb,
-		conn: conn,
-		//connID:          connID,
-		AddStreamCh:     make(chan *streamReq),
-		RemoveStreamCh:  make(chan string),
-		streams:         []string{},
+		ctx:    ctx,
+		rdb:    rdb,
+		conn:   conn,
+		connID: connID,
+		//AddStreamCh:     make(chan *streamReq),
+		//RemoveStreamCh:  make(chan string),
+		streams:         streams,
 		streamsMu:       sync.RWMutex{},
-		lastReceivedIDs: []string{},
+		lastReceivedIDs: streamIDs,
 		msgChannels:     make(map[string]chan *message.EnvelopeContext),
-		errChannels:     make(map[string]chan error),
+		msgMu:           sync.Mutex{},
 		stopListeningCh: make(chan any),
 		stoppedCh:       make(chan any),
 	}
@@ -140,7 +142,6 @@ func (l *RedisStreamListener) runLoop() {
 	for {
 		loopCount++
 		l.streamsMu.RLock()
-		streams := append([]string(nil), l.streams...)
 		ids := append([]string(nil), l.lastReceivedIDs...)
 		l.streamsMu.RUnlock()
 		doneCh := make(chan struct{})
@@ -153,75 +154,76 @@ func (l *RedisStreamListener) runLoop() {
 		// Use a new context for each XRead call to avoid re-using a cancelled one.
 		ctx, cancel = context.WithCancel(l.ctx)
 
-		if len(streams) > 0 {
-			wg.Add(1)
-			go func(lc int) {
-				defer func() {
-					close(doneCh)
-					wg.Done()
-				}()
-				xReadConn := l.conn
-				ID := xReadConn.ClientID(ctx).Val()
-				//currentID := l.conn.ClientID(ctx).Val()
-				stop = context.AfterFunc(ctx, func() {
-					fmt.Printf("cancelling XRead on conn[%d]\n", ID)
-					//unblockCtx, cancelUnblock := context.WithTimeout(context.Background(), time.Millisecond*100)
-					//defer cancelUnblock()
+		wg.Add(1)
+		go func(lc int) {
+			defer func() {
+				close(doneCh)
+				wg.Done()
+			}()
+			//currentID := l.conn.ClientID(ctx).Val()
+			stop = context.AfterFunc(ctx, func() {
+				fmt.Printf("cancelling XRead on conn[%d]\n", l.connID)
+				unblockCtx, cancelUnblock := context.WithTimeout(context.Background(), time.Millisecond*100)
+				defer cancelUnblock()
 
-					//err := l.rdb.ClientUnblock(unblockCtx, currentID).Err()
-					//err := l.rdb.ClientUnblock(l.ctx, currentID).Err()
-					//err := l.rdb.ClientUnblock(l.ctx, currentID).Err() //use the listener's active context to Unblock redis
-					err := xReadConn.Close()
-					if err != nil {
-						log.Printf("error unblocking conn[%d] - %v - loopCount[%d]\n", l.connID, err, lc)
-					}
-					fmt.Printf("cancelled XRead\n")
-				})
-				fmt.Printf("listening to streams on conn[%d] [%v]\n", ID, streams)
-				streamResults, err := xReadConn.XRead(ctx, &redis.XReadArgs{
-					Streams: append(streams, ids...),
-					Count:   1,
-					Block:   0,
-				}).Result()
-				fmt.Printf("stopped listening to streams\n")
-				if errors.Is(err, redis.Nil) || errors.Is(err, redis.ErrClosed) {
-					return
-				}
+				err := l.rdb.ClientUnblock(unblockCtx, l.connID).Err()
 				if err != nil {
-					log.Printf("XRead error - %v\n", err)
-					return
+					log.Printf("error unblocking conn[%d] - %v - loopCount[%d]\n", l.connID, err, lc)
 				}
-				for _, streamResult := range streamResults {
-					currentStream := streamResult.Stream
-					msg := streamResult.Messages[0]
-					payload, ok := msg.Values["payload"].(string)
-					if !ok {
-						l.errChannels[currentStream] <- fmt.Errorf("missing payload field")
-						continue
-					}
-
-					var env *message.Envelope
-					if err := json.Unmarshal([]byte(payload), &env); err != nil {
-						l.errChannels[currentStream] <- fmt.Errorf("unmarshal failed: %w", err)
-						continue
-					}
-
-					l.streamsMu.Lock()
-					idx := slices.Index(l.streams, currentStream)
-					if idx >= 0 {
-						l.lastReceivedIDs[idx] = msg.ID
-					}
-					l.streamsMu.Unlock()
-
-					l.msgChannels[currentStream] <- &message.EnvelopeContext{
-						Env: env,
-						AckFunc: func(ctx context.Context) error {
-							return nil
-						},
-					}
+				fmt.Printf("cancelled XRead\n")
+			})
+			fmt.Printf("listening to streams on conn[%d] [%v]\n", l.connID, l.streams)
+			streamResults, err := l.conn.XRead(ctx, &redis.XReadArgs{
+				Streams: append(l.streams, ids...),
+				Count:   1,
+				Block:   0,
+			}).Result()
+			fmt.Printf("stopped listening to streams\n")
+			if errors.Is(err, redis.Nil) || errors.Is(err, redis.ErrClosed) {
+				return
+			}
+			if err != nil {
+				log.Printf("XRead error - %v\n", err)
+				return
+			}
+			for _, streamResult := range streamResults {
+				currentStream := streamResult.Stream
+				msg := streamResult.Messages[0]
+				//TODO Send MSG ID to Deduplicator to check if msg has already been processed.
+				//TODO this will be implemented once there are multiple workers running run Loop.
+				payload, ok := msg.Values["payload"].(string)
+				if !ok {
+					fmt.Printf("missing payload field for msg[%s]\n", msg.ID)
+					continue
 				}
-			}(loopCount)
-		}
+
+				var env *message.Envelope
+				if err := json.Unmarshal([]byte(payload), &env); err != nil {
+					fmt.Printf("unmarshal failed for msg[%s] with err[%v]", msg.ID, err)
+					continue
+				}
+
+				//TODO should Deduplicator update the lastReceivedIds?
+				l.streamsMu.Lock()
+				idx := slices.Index(l.streams, currentStream)
+				if idx >= 0 {
+					l.lastReceivedIDs[idx] = msg.ID
+				}
+				l.streamsMu.Unlock()
+
+				var consumerID string
+				consumerID = string(env.MetaData[metadata.DestinationID])
+
+				l.msgMu.Lock()
+				l.msgChannels[consumerID] <- &message.EnvelopeContext{
+					Env: env,
+					AckFunc: func(ctx context.Context) error {
+						return nil
+					},
+				}
+				l.msgMu.Unlock()
+			}
+		}(loopCount)
 		select {
 		case <-l.stopListeningCh:
 			fmt.Printf("stopping runLoop\n")
@@ -234,82 +236,37 @@ func (l *RedisStreamListener) runLoop() {
 		case <-doneCh:
 			stop()
 			cancel() // Cancel the context once XRead returns
-
-		case newStreamReq := <-l.AddStreamCh:
-			if len(streams) > 0 {
-				cancel()
-				<-doneCh
-				l.conn = l.rdb.Conn()
-			}
-			//select {
-			//case <-doneCh:
-			//case <-time.After(time.Second * 1):
-			//	log.Printf("FATAL: Timed out waiting for XRead routine to close doneCh during stream addition.")
-			//}
-			//<-doneCh
-			//wg.Wait()
-			l.streamsMu.Lock()
-			l.streams = append(l.streams, newStreamReq.stream)
-			l.lastReceivedIDs = append(l.lastReceivedIDs, "0-0")
-			l.streamsMu.Unlock()
-			close(newStreamReq.reqDone)
-			fmt.Printf("successfully added stream[%s]\n", newStreamReq.stream)
-			continue
-		case removeStream := <-l.RemoveStreamCh:
-			cancel()
-			//wg.Wait()
-			<-doneCh
-			l.streamsMu.Lock()
-			idx := slices.Index(l.streams, removeStream)
-			if idx == -1 {
-				log.Printf("trying to remove non-existent stream - %s\n", removeStream)
-				l.streamsMu.Unlock()
-				continue
-			}
-			l.streams = append(l.streams[:idx], l.streams[idx+1:]...)
-			l.lastReceivedIDs = append(l.lastReceivedIDs[:idx], l.lastReceivedIDs[idx+1:]...)
-			delete(l.msgChannels, removeStream)
-			delete(l.errChannels, removeStream)
-			l.streamsMu.Unlock()
 		}
 	}
 }
 
-// AddConsumer adds a new stream to the stream listener
-func (l *RedisStreamListener) AddConsumer(ctx context.Context, stream string) (*RedisMessageConsumer, error) {
-	l.streamsMu.Lock()
-	l.msgChannels[stream] = make(chan *message.EnvelopeContext, 100)
-	l.errChannels[stream] = make(chan error, 10)
-	l.streamsMu.Unlock()
-	fmt.Printf("stinky stinky\n")
-	req := newStreamReq(stream)
-	l.AddStreamCh <- req
+// AddConsumer adds a new consumer to the consumerID listener
+func (l *RedisStreamListener) AddConsumer(consumerID string) (*RedisMessageConsumer, error) {
+	l.msgMu.Lock()
+	l.msgChannels[consumerID] = make(chan *message.EnvelopeContext, 100)
+	l.msgMu.Unlock()
 
-	select {
-	case <-req.reqDone:
-		return &RedisMessageConsumer{
-			streamListener: l,
-			stream:         stream,
-		}, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+	return &RedisMessageConsumer{
+		streamListener: l,
+		consumerID:     consumerID,
+	}, nil
 }
 
-// RemoveConsumer removes a stream from the stream listener
-func (l *RedisStreamListener) RemoveConsumer(stream string) {
-	l.RemoveStreamCh <- stream
+// RemoveConsumer removes a consumer from the consumerID listener
+func (l *RedisStreamListener) RemoveConsumer(consumerID string) {
+	l.msgMu.Lock()
+	delete(l.msgChannels, consumerID)
+	l.msgMu.Unlock()
 }
 
 type RedisMessageConsumer struct {
 	streamListener *RedisStreamListener
-	stream         string
+	consumerID     string
 }
 
 func (r RedisMessageConsumer) StartReceiving(ctx context.Context) (<-chan *message.EnvelopeContext, <-chan error) {
-	msgCh := r.streamListener.msgChannels[r.stream]
-	errCh := r.streamListener.errChannels[r.stream]
-	return msgCh, errCh
+	msgCh := r.streamListener.msgChannels[r.consumerID]
+	return msgCh, nil
 }
 
 // type MessageGroupConsumerBuilderFunc = func(ctx context.Context, consumerId string) MessageConsumer
@@ -379,13 +336,13 @@ func (mc *RedisMessageGroupConsumer) StartReceiving(ctx context.Context) (<-chan
 					if errors.Is(err, context.Canceled) {
 						return
 					}
-					errCh <- fmt.Errorf("error reading from RedisMessageGroupConsumer stream - %v", err)
+					errCh <- fmt.Errorf("error reading from RedisMessageGroupConsumer consumerID - %v", err)
 					return
 				}
 
 				data, ok := streamResults[0].Messages[0].Values["payload"].(string)
 				if !ok {
-					log.Printf("error trying to structure the stream reply - %v", err)
+					log.Printf("error trying to structure the consumerID reply - %v", err)
 				}
 				payload := []byte(data)
 				id := streamResults[0].Messages[0].ID

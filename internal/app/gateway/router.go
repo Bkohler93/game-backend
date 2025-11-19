@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 
 	"github.com/bkohler93/game-backend/internal/app/game"
@@ -51,6 +50,11 @@ func (r *Router) RouteClientTraffic(ctx context.Context, client *Client) {
 	}
 }
 
+func (r *Router) UnrouteClientTraffic(c *Client) {
+	r.transportFactory.GameClientMsgConsumerDestroyer(c.ID)
+	r.transportFactory.MatchmakingClientMsgConsumerDestroyer(c.ID)
+}
+
 type ServerMessageHandlerState int
 
 const (
@@ -63,7 +67,7 @@ type MessageHandler struct {
 	client              *Client
 	state               ServerMessageHandlerState
 	fromServerCh        chan *message.EnvelopeContext
-	gameProducer        transport.DynamicMessageProducer
+	gameProducer        transport.MessageProducer
 	matchmakeProducer   transport.MessageProducer
 	matchmakingConsumer transport.MessageConsumer
 	gameConsumer        transport.MessageConsumer
@@ -96,6 +100,7 @@ func NewMessageHandler(ctx context.Context, router *Router, client *Client) *Mes
 func (s *MessageHandler) StartListening(ctx context.Context) error {
 	matchmakeCh, matchmakeErrCh := s.matchmakingConsumer.StartReceiving(ctx)
 	gameCh, gameErrCh := s.gameConsumer.StartReceiving(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -105,11 +110,9 @@ func (s *MessageHandler) StartListening(ctx context.Context) error {
 		case err := <-gameErrCh:
 			return err
 		case envCtx := <-matchmakeCh:
-			fmt.Printf("client[%s] received matchmaking server msg\n", s.client.ID)
 			s.state = MatchmakingServerMessageState
 			s.handleMatchmakingMessage(envCtx)
 		case envCtx := <-gameCh:
-			fmt.Printf("client[%s] received game server msg\n", s.client.ID)
 			s.state = GameServerMessageState
 			s.handleGameMessage(envCtx)
 		}
@@ -175,7 +178,6 @@ func (s *MessageHandler) RouteServerMsg(ctx context.Context, envCtx *message.Env
 	switch message.ServiceType(envCtx.Env.Type) {
 	case message.MatchmakingService:
 		s.state = MatchmakingServerMessageState
-		fmt.Printf("sending matchmaking server msg\n")
 		err := s.matchmakeProducer.Send(ctx, envCtx.Env)
 		if err != nil {
 			log.Println("failed to send matchmaking message - ", err)
@@ -191,66 +193,6 @@ func (s *MessageHandler) RouteServerMsg(ctx context.Context, envCtx *message.Env
 	}
 }
 
-//func (r *Router) receiveMatchmaking(ctx context.Context, client *Client) (RouteFunc, error) {
-//	msgSource, err := r.transportFactory.MatchmakingClientMsgConsumerBuilder(ctx, client.ID.String())
-//	if err != nil {
-//		log.Printf("error creating matchmake client message consumer - %v\n", err)
-//	}
-//	envCh, errCh := msgSource.StartReceiving(ctx)
-//
-//	for {
-//		select {
-//		case <-ctx.Done():
-//			return nil, ctx.Err()
-//		case err := <-errCh:
-//			//TODO err may be recoverable, may not need to return an err here
-//			log.Println("receiveMatchmaking MessageGroupConsumer received an error -", err)
-//			return nil, err
-//		case env := <-envCh:
-//			if env.Env.MetaData[metadata.TransitionTo] == metadata.Game {
-//				roomId := env.Env.MetaData[metadata.RoomIDKey]
-//				if roomId == "" {
-//					log.Println("did not receive room id")
-//				}
-//				client.RoomID = uuidstring.ID(roomId)
-//				client.writeChan <- env
-//				return r.receiveGame, nil
-//			}
-//			client.writeChan <- env
-//		}
-//	}
-//}
-//
-//func (r *Router) receiveGame(ctx context.Context, client *Client) (RouteFunc, error) {
-//	msgSource, err := r.transportFactory.GameClientMsgConsumerBuilder(ctx, client.ID.String())
-//	if err != nil {
-//		log.Printf("error creating Game Client Message consumer - %v\n", err)
-//	}
-//	msgCh, errCh := msgSource.StartReceiving(ctx)
-//
-//	for {
-//		select {
-//		case <-ctx.Done():
-//			return nil, ctx.Err()
-//		case err := <-errCh:
-//			//TODO err may be recoverable, may not need to return an err here
-//			log.Println("receiveGame MessageGroupConsumer received an error -", err)
-//			return nil, err
-//		case msg := <-msgCh:
-//			nextState := msg.Env.MetaData[metadata.TransitionTo]
-//			switch nextState {
-//			case metadata.Remain:
-//				client.writeChan <- msg
-//			case metadata.GameOver:
-//				client.writeChan <- msg
-//				return nil, nil
-//			default:
-//				log.Println("unknown game state to start receiving messages for -", nextState)
-//			}
-//		}
-//	}
-//}
-
 func getServiceType(messageType string) message.ServiceType {
 	if game.IsGameServerMessageType(messageType) {
 		return message.GameService
@@ -258,49 +200,4 @@ func getServiceType(messageType string) message.ServiceType {
 		return message.MatchmakingService
 	}
 	return ""
-
 }
-
-//func NewClientTransportBusFactory(rdb *redis.Client, matchmakingClientMsgConsumerBuilder transport.MessageGroupConsumerBuilderFunc, matchmakingServerMessageProducerBuilder transport.MessageProducerBuilderFunc) *TransportFactory {
-//	return &TransportFactory{
-//		rdb,
-//		matchmakingClientMsgConsumerBuilder,
-//		matchmakingServerMessageProducerBuilder,
-//	}
-//}
-
-//type TransportBus struct {
-//	bus *transport.Bus
-//}
-
-//func (f *TransportFactory) NewTransportBus(clientId uuidstring.ID) *TransportBus {
-//	b := &TransportBus{
-//		bus: &transport.Bus{},
-//	}
-//	clientMessageConsumer := f.matchmakingClientMsgConsumerBuilder(clientId.String())
-//	serverMessageProducer := f.matchmakingServerMsgProducerBuilder()
-//
-//	b.bus.AddMessageGroupConsumer(ClientMessageConsumer, clientMessageConsumer)
-//	b.bus.AddMessageProducer(ServerMessageProducer, serverMessageProducer)
-//	return b
-//}
-
-//func (f *TransportFactory) NewMatchmakingMsgConsumer(clientId uuidstring.ID) transport.MessageGroupConsumer {
-//	return f.matchmakingClientMsgConsumerBuilder(clientId.String())
-//}
-
-//func (f *TransportFactory) NewSetupMsgConsumer(clientId uuidstring.ID) transport.MessageGroupConsumer {
-//	return f.setupClientMsgConsumerBuilder(clientId.String())
-//}
-
-//func (b *TransportBus) StartReceivingMatchmakingClientMessages(ctx context.Context) (<-chan transport.AckableMessage, <-chan error) {
-//	return b.bus.StartReceiving(ctx, ClientMessageConsumer)
-//}
-//
-//func (b *TransportBus) AckMatchmakingMsg(ctx context.Context, id string) error {
-//	return b.bus.AckMessage(ctx, ClientMessageConsumer, id)
-//}
-//
-//func (b *TransportBus) SendMatchmakingServerMessage(ctx context.Context, payload json.RawMessage) error {
-//	return b.bus.Send(ctx, ServerMessageProducer, payload)
-//}

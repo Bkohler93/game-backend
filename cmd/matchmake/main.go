@@ -39,7 +39,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	// serverId := uuidstring.NewID()
+	//hostname, err := os.Hostname()
+	//if err != nil {
+	//	panic(err)
+	//}
 
 	roomRepository, err := room.NewRepository(ctx, roomStore)
 	if err != nil {
@@ -51,8 +54,11 @@ func main() {
 
 	matchmakingClientMessageProducer := matchmake.NewRedisClientMessageProducer(redisClient)
 
-	redisStreamListener := transport.NewRedisStreamListener(ctx, redisClient)
-	matchmakingServerMessageConsumer := redisStreamListener.AddConsumer(rediskeys.MatchmakingServerMessageStream)
+	redisStreamListener := transport.NewRedisStreamListener(ctx, redisClient, []string{rediskeys.MatchmakingServerMessageStream})
+	matchmakingServerMessageConsumer, err := redisStreamListener.AddConsumer(rediskeys.MatchmakingServerMessageStream)
+	if err != nil {
+		panic(err)
+	}
 	// matchmakingServerMessageConsumer, err := matchmake.NewRedisMatchmakingServerMessageConsumer(ctx, redisClient, serverId.String())
 
 	matchmakeWorkerNotifier := matchmake.NewRedisWorkerNotifierBroadcastProducer(redisClient)

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	"github.com/bkohler93/game-backend/internal/shared/message"
-	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -17,7 +16,7 @@ type MessageProducerBuilderFunc = func() MessageProducer
 
 type DynamicMessageProducerType string
 type DynamicMessageProducer interface {
-	SendTo(ctx context.Context, recipientId uuidstring.ID, env *message.Envelope) error
+	SendTo(ctx context.Context, hostname string, env *message.Envelope) error
 }
 type DynamicMessageProducerBuilderFunc = func() DynamicMessageProducer
 
@@ -28,10 +27,10 @@ type BroadcastProducer interface {
 
 type RedisDynamicMessageProducer struct {
 	rdb    *redis.Client
-	stream func(uuidstring.ID) string
+	stream func(destinationID string) string
 }
 
-func (r *RedisDynamicMessageProducer) SendTo(ctx context.Context, recipientId uuidstring.ID, env *message.Envelope) error {
+func (r *RedisDynamicMessageProducer) SendTo(ctx context.Context, hostname string, env *message.Envelope) error {
 	payload, err := json.Marshal(env)
 	if err != nil {
 		return err
@@ -40,7 +39,7 @@ func (r *RedisDynamicMessageProducer) SendTo(ctx context.Context, recipientId uu
 	values := map[string]interface{}{
 		"payload": payload,
 	}
-	stream := r.stream(recipientId)
+	stream := r.stream(hostname)
 	return r.rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: stream,
 		ID:     "*",
@@ -48,7 +47,7 @@ func (r *RedisDynamicMessageProducer) SendTo(ctx context.Context, recipientId uu
 	}).Err()
 }
 
-func NewRedisDynamicMessageProducer(rdb *redis.Client, streamNameFunc func(uuidstring.ID) string) *RedisDynamicMessageProducer {
+func NewRedisDynamicMessageProducer(rdb *redis.Client, streamNameFunc func(string) string) *RedisDynamicMessageProducer {
 	return &RedisDynamicMessageProducer{
 		rdb:    rdb,
 		stream: streamNameFunc,

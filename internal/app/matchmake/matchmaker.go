@@ -3,7 +3,6 @@ package matchmake
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"time"
 
@@ -182,7 +181,6 @@ func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 						return err
 					}
 				case *RequestMatchmakingMessage:
-					fmt.Printf("received matchmakingMessage from %v\n", msg.UserId)
 					err = m.processMatchmakingRequest(gCtx, msg) // errors received from this are breaking
 					if err != nil {
 						return err
@@ -219,7 +217,6 @@ func (m *Matchmaker) ProcessMatchmakingMessages(ctx context.Context) error {
 }
 
 func (m *Matchmaker) attemptMatchmake(ctx context.Context, roomId uuidstring.ID) error {
-	fmt.Printf("attempting matchmake for room[%v]\n", roomId)
 	lockKey, err := m.RoomRepository.LockRoom(ctx, roomId)
 	if err != nil {
 		return err
@@ -262,7 +259,6 @@ func (m *Matchmaker) attemptMatchmake(ctx context.Context, roomId uuidstring.ID)
 			}
 			return err
 		}
-		fmt.Printf("successful match combined[%s] into room[%s]\n", rm.RoomId, openRm.RoomId)
 		didMakeMatch = true
 		var clientMsg MatchmakingClientMessage
 		if combinedRoom.PlayerCount == constants.MaxPlayerCount {
@@ -285,7 +281,6 @@ func (m *Matchmaker) attemptMatchmake(ctx context.Context, roomId uuidstring.ID)
 			if err != nil {
 				log.Printf("encountered an error sending message to client - %v", err)
 			}
-			fmt.Printf("send matchmade msg to client[%s]\n", playerId)
 		}
 	}
 

@@ -12,7 +12,6 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
-	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 func main() {
@@ -39,27 +38,37 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		panic(err)
+	}
 
-	streamListener := transport.NewRedisStreamListener(ctx, redisClient)
+	streamListener := transport.NewRedisStreamListener(ctx, redisClient, []string{rediskeys.MatchmakingClientMessageStreamDestination(hostname), rediskeys.GameClientMessageStreamDestination(hostname)})
 
 	transportFactory := &gateway.TransportFactory{
 		MatchmakingClientMsgConsumerBuilder: func(ctx context.Context, clientId string) (transport.MessageConsumer, error) {
-			stream := rediskeys.MatchmakingClientMessageStream(uuidstring.ID(clientId))
 			// consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
 			// return transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, clientId)
-			return streamListener.AddConsumer(stream), nil
+			return streamListener.AddConsumer(clientId)
+		},
+		MatchmakingClientMsgConsumerDestroyer: func(clientId string) {
+			streamListener.RemoveConsumer(clientId)
 		},
 		GameClientMsgConsumerBuilder: func(ctx context.Context, clientId string) (transport.MessageConsumer, error) {
-			stream := rediskeys.GameClientMessageStream(uuidstring.ID(clientId))
+			//destinationID := rediskeys.GameClientMessageStreamDestination(uuidstring.ID(clientId))
 			// consumerGroup := rediskeys.MatchmakingClientMessageCGroup(uuidstring.ID(clientId))
 			// return transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, clientId)
-			return streamListener.AddConsumer(stream), nil
+			return streamListener.AddConsumer(clientId)
+		},
+		GameClientMsgConsumerDestroyer: func(clientId string) {
+			//destinationID := rediskeys.GameClientMessageStreamDestination(clientId)
+			streamListener.RemoveConsumer(clientId)
 		},
 		MatchmakingServerMsgProducerBuilder: func() transport.MessageProducer {
 			return transport.NewRedisMessageProducer(redisWriteClient, rediskeys.MatchmakingServerMessageStream)
 		},
 		GameplayServerMsgProducerBuilder: func() transport.DynamicMessageProducer {
-			return transport.NewRedisDynamicMessageProducer(redisWriteClient, rediskeys.GameServerMessageStream)
+			return transport.NewRedisDynamicMessageProducer(redisWriteClient, rediskeys.GameServerMessageStreamDestination)
 		},
 	}
 

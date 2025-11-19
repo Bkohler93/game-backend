@@ -3,6 +3,7 @@ package game
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -47,7 +48,8 @@ func (gs *GameServer) Start(ctx context.Context) {
 				}
 				continue
 			}
-
+			fmt.Printf("starting new game[%s]\n", roomID)
+			//TODO gs.GameRoutingTable.Add(
 			wg.Add(1)
 
 			go func() {

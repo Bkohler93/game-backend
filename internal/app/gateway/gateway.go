@@ -44,20 +44,21 @@ func (g *Gateway) Start(ctx context.Context) {
 
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		eg, ctx := errgroup.WithContext(ctx)
-
 		c, err := NewClient(ctx, w, r)
 		if err != nil {
 			log.Printf("failed to initialize client websocket - %v\n", err)
 			return
 		}
+		fmt.Printf("...\n")
 		defer func(conn *websocket.Conn) {
 			err := conn.Close()
 			if err != nil {
 				log.Printf("failed to close connection - %v\n", err)
 			}
 		}(c.Conn)
-
+		fmt.Printf("sending on registerCh\n")
 		g.hub.RegisterCh <- c
+		fmt.Printf("sent on registerCh\n")
 		eg.Go(func() error {
 			return c.PingLoop(ctx)
 		})

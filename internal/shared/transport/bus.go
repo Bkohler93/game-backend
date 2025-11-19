@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/bkohler93/game-backend/internal/shared/message"
-	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 type Bus struct {
@@ -51,8 +50,8 @@ func (m *Bus) Send(ctx context.Context, t MessageProducerType, env *message.Enve
 	return m.messageProducers[t].Send(ctx, env)
 }
 
-func (m *Bus) SendTo(ctx context.Context, producerType DynamicMessageProducerType, recipient uuidstring.ID, env *message.Envelope) error {
-	return m.dynamicMessageProducers[producerType].SendTo(ctx, recipient, env)
+func (m *Bus) SendTo(ctx context.Context, producerType DynamicMessageProducerType, targetHostname string, env *message.Envelope) error {
+	return m.dynamicMessageProducers[producerType].SendTo(ctx, targetHostname, env)
 }
 
 func (m *Bus) Publish(ctx context.Context, producerType BroadcastProducerType, env *message.Envelope) error {

@@ -6,6 +6,7 @@ const (
 	TransitionTo MetaDataKey = iota
 	RoomIDKey
 	MsgIdKey
+	DestinationID
 )
 
 type MetaDataValue string

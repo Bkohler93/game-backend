@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 )
@@ -27,6 +28,7 @@ func NewHub(r *Router) *Hub {
 		for {
 			select {
 			case c := <-h.RegisterCh:
+				fmt.Printf("received client[%s] on registerCh\n", c.ID)
 				ctx, cancelFunc := context.WithCancel(context.Background())
 				h.Clients[c] = cancelFunc
 
@@ -40,6 +42,9 @@ func NewHub(r *Router) *Hub {
 						log.Printf("error closing client's(%s) websocket conn - %v", c.ID.String(), err)
 					}
 				}
+
+				//h.router.UnrouteClientTraffic(c)
+
 				cancelClientCtxFunc := h.Clients[c]
 				cancelClientCtxFunc()
 				delete(h.Clients, c)

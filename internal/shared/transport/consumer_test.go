@@ -2,18 +2,23 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/bkohler93/game-backend/internal/shared/message"
+	"github.com/bkohler93/game-backend/internal/shared/message/metadata"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
+	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
+	"github.com/bkohler93/game-backend/pkg/uuidstring"
 	"github.com/redis/go-redis/v9"
 )
 
 func TestStreamListener(t *testing.T) {
-	numTests := 1000
+	numTests := 2
 	ctx := context.TODO()
 	redisClient, err := redisutils.NewRedisMatchmakeClient(ctx)
 	if err != nil {
@@ -21,60 +26,61 @@ func TestStreamListener(t *testing.T) {
 	}
 	for j := 0; j < numTests; j++ {
 		ctx = context.Background()
-		s1 := "test1"
-		listener := NewRedisStreamListener(ctx, redisClient)
-		//producer := NewRedisMessageProducer(redisClient, s1)
-		//sendMsg := func(msg string) {
-		//	raw, err := json.Marshal(msg)
-		//	if err != nil {
-		//		t.Fatalf("error marshalling json - %v\n", err)
-		//	}
-		//
-		//	err = producer.Send(ctx, &message.Envelope{
-		//		Type:     message.MatchmakingService,
-		//		Payload:  raw,
-		//		MetaData: nil,
-		//	})
-		//	if err != nil {
-		//		t.Fatalf("could not send msg with err[%v]\n", err)
-		//	}
-		//}
-		//consumer := listener.AddConsumer(s1)
-		addCtx, cancel := context.WithTimeout(ctx, time.Second*1)
-		_, err := listener.AddConsumer(addCtx, s1)
-		cancel()
+		listener := NewRedisStreamListener(ctx, redisClient, []string{rediskeys.MatchmakingClientMessageStream, rediskeys.GameClientMessageStream})
+		producer := NewRedisMessageProducer(redisClient, rediskeys.MatchmakingClientMessageStream)
+		sendMsg := func(msg string, id uuidstring.ID) {
+			raw, err := json.Marshal(msg)
+			if err != nil {
+				t.Fatalf("error marshalling json - %v\n", err)
+			}
+			metaData := metadata.MetaData{
+				metadata.DestinationID: metadata.MetaDataValue(rediskeys.MatchmakingClientMessageStreamDestination(id)),
+			}
+
+			err = producer.Send(ctx, &message.Envelope{
+				Type:     message.MatchmakingService,
+				Payload:  raw,
+				MetaData: metaData,
+			})
+			if err != nil {
+				t.Fatalf("could not send msg with err[%v]\n", err)
+			}
+		}
+		user1 := uuidstring.NewID()
+		consumerID := rediskeys.MatchmakingClientMessageStreamDestination(user1)
+		consumer, err := listener.AddConsumer(consumerID)
 		if err != nil {
 			t.Fatalf("failed to add consumer with err[%v]\n", err)
 		}
 
 		var wg sync.WaitGroup
-		//wg.Add(1)
-		//go func() {
-		//	defer func() {
-		//		wg.Done()
-		//	}()
-		//
-		//	msgCh, errCh := consumer.StartReceiving(ctx)
-		//
-		//	errTimer := time.NewTimer(time.Second * 1)
-		//
-		//mainLoop:
-		//	for {
-		//		select {
-		//		case msg := <-msgCh:
-		//			fmt.Printf("received msg - %v\n", msg)
-		//			break mainLoop
-		//		case err := <-errCh:
-		//			t.Errorf("received err - %v\n", err)
-		//		case <-errTimer.C:
-		//			t.Fatalf("test timed out\n")
-		//		}
-		//	}
-		//}()
+		wg.Add(1)
+		go func() {
+			defer func() {
+				wg.Done()
+			}()
+
+			msgCh, errCh := consumer.StartReceiving(ctx)
+
+			errTimer := time.NewTimer(time.Second * 1)
+
+		mainLoop:
+			for {
+				select {
+				case msg := <-msgCh:
+					fmt.Printf("received msg - %v\n", msg)
+					break mainLoop
+				case err := <-errCh:
+					t.Errorf("received err - %v\n", err)
+				case <-errTimer.C:
+					t.Fatalf("test timed out\n")
+				}
+			}
+		}()
 		numStreams := 2
-		names := []string{s1}
+		names := []uuidstring.ID{user1}
 		for i := 0; i < numStreams; i++ {
-			name := fmt.Sprintf("buttcheeks%d", i)
+			name := uuidstring.NewID()
 			names = append(names, name)
 			//timer := time.NewTimer(time.Millisecond * 100)
 			//doneCh := make(chan struct{})
@@ -84,20 +90,19 @@ func TestStreamListener(t *testing.T) {
 			//}()
 			//select {
 			//case <-timer.C:
-			//	t.Fatalf("took to long to add stream[%s]\n", name)
+			//	t.Fatalf("took to long to add consumerID[%s]\n", name)
 			//case <-doneCh:
 			//	break
 			//}
-
-			addCtx, cancel := context.WithTimeout(ctx, time.Second*5)
-			_, err := listener.AddConsumer(addCtx, name)
-			cancel()
+			consumerID := rediskeys.MatchmakingClientMessageStreamDestination(name)
+			_, err := listener.AddConsumer(consumerID)
 			if err != nil {
 				t.Fatalf("failed to add consumer[%s] with err[%v]\n", name, err)
 			}
-			//if i == 1 {
-			//	sendMsg("sup smelly")
-			//}
+			if i == 1 {
+				sendMsg("you stinky", user1)
+				fmt.Printf("sent message\n")
+			}
 		}
 		wg.Wait()
 
@@ -106,7 +111,7 @@ func TestStreamListener(t *testing.T) {
 		if !didStop {
 			t.Fatalf("failed to stop listening to redis streams - cycle[%d]\n", j)
 		}
-		err = redisClient.Del(ctx, names...).Err()
+		err = redisClient.Del(ctx, rediskeys.MatchmakingClientMessageStream).Err()
 		if err != nil {
 			t.Fatalf("failed to delete keys with err - %v\n", err)
 		}

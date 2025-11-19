@@ -2,7 +2,6 @@ package game
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
@@ -247,7 +246,10 @@ func (c *Setup) Enter(ctx context.Context) {
 			fiveLetterWords,
 		)
 
-		c.g.sendToClient(ctx, playerId, msg)
+		err = c.g.sendToClient(ctx, playerId, msg)
+		if err != nil {
+			log.Printf("failed to send message to client[%s]\n", playerId)
+		}
 	}
 }
 
@@ -464,7 +466,7 @@ func (c *Gameplay) Enter(ctx context.Context) {
 				}
 				msg, err := NewGameplayTimeUpdateMessage(c.PlayerTimes[c.g.Players[0]], c.g.Players[0], turnResult)
 				if err != nil {
-					fmt.Printf("failed to create TimeUpdateMessage - %v", err)
+					log.Printf("failed to create TimeUpdateMessage - %v", err)
 					continue
 				}
 				for _, playerId := range c.g.Players {
@@ -480,7 +482,7 @@ func (c *Gameplay) Enter(ctx context.Context) {
 				}
 				msg, err := NewGameplayTimeUpdateMessage(c.PlayerTimes[c.g.Players[1]], c.g.Players[1], turnResult)
 				if err != nil {
-					fmt.Printf("failed to create TimeUpdateMessage - %v", err)
+					log.Printf("failed to create TimeUpdateMessage - %v", err)
 					continue
 				}
 				for _, playerId := range c.g.Players {

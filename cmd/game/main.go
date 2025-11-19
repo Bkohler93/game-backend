@@ -13,7 +13,6 @@ import (
 	"github.com/bkohler93/game-backend/internal/shared/utils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils"
 	"github.com/bkohler93/game-backend/internal/shared/utils/redisutils/rediskeys"
-	"github.com/bkohler93/game-backend/pkg/uuidstring"
 )
 
 func main() {
@@ -38,15 +37,18 @@ func main() {
 
 	tf := &game.TransportFactory{
 		GameServerMsgConsumerBuilder: func(ctx context.Context, roomID string) (transport.MessageConsumer, error) {
-			stream := rediskeys.GameServerMessageStream(uuidstring.ID(roomID))
-			consumerGroup := rediskeys.GameServerMessageCGroup(uuidstring.ID(roomID))
-			return transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, roomID)
+			//stream := rediskeys.GameServerMessageStream(uuidstring.ID(roomID))
+			//consumerGroup := rediskeys.GameServerMessageCGroup(uuidstring.ID(roomID))
+			//return transport.NewRedisMessageGroupConsumer(ctx, redisClient, stream, consumerGroup, roomID)
 			// return transport.NewRedisMessageConsumer(ctx, redisStreamListener, stream), nil
 			// return redisStreamListener.AddConsumer(stream), nil
+
+			listener := transport.NewRedisStreamListener(ctx, redisClient, []string{rediskeys.GameServerMessageStream})
+			return listener.AddConsumer(roomID)
 		},
 		GameClientMsgProducerBuilder: func() transport.DynamicMessageProducer {
-			return transport.NewRedisDynamicMessageProducer(redisClient, func(clientId uuidstring.ID) string {
-				return rediskeys.GameClientMessageStream(clientId)
+			return transport.NewRedisDynamicMessageProducer(redisClient, func(targetHostname string) string {
+				return rediskeys.GameClientMessageStreamDestination(targetHostname)
 			})
 		},
 	}

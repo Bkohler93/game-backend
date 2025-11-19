@@ -33,14 +33,17 @@ func NewGameTransportBus(serverMessageConsumer transport.MessageConsumer, client
 	return b
 }
 
-func (b *GameTransportBus) SendToClient(ctx context.Context, id uuidstring.ID, msg GameClientMessage) error {
+func (b *GameTransportBus) SendToClient(ctx context.Context, clientId uuidstring.ID, msg GameClientMessage) error {
 	bytes, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
 	var md metadata.MetaData
+	md[metadata.DestinationID] = metadata.MetaDataValue(clientId)
+	var targetHostname string
+	//TODO b.ClientRoutingTable.GetTargetHostname(clientId
 
-	return b.transportBus.SendTo(ctx, ClientMessageProducer, id, &message.Envelope{
+	return b.transportBus.SendTo(ctx, ClientMessageProducer, targetHostname, &message.Envelope{
 		Type:     message.GameService,
 		Payload:  bytes,
 		MetaData: md,

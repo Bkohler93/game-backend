@@ -27,6 +27,7 @@ var (
 
 type TransportBus struct {
 	transportBus *transport.Bus
+	//TODO ClientRoutingTable
 }
 
 func NewBus(serverMessageConsumer transport.MessageConsumer, clientMessageProducer transport.DynamicMessageProducer, matchmakeWorkerNotifier transport.BroadcastProducer, matchmakeWorkerNotifyReceiver transport.BroadcastConsumer) *TransportBus {
@@ -51,8 +52,10 @@ func (b *TransportBus) ListenForMatchmakeWorkerNotifications(ctx context.Context
 				msgCh <- msg
 			case <-ctx.Done():
 				errorCh <- ctx.Err()
+				return
 			case err := <-errCh:
 				errorCh <- err
+				return
 			}
 		}
 	}()
@@ -67,7 +70,7 @@ func (b *TransportBus) NotifyMatchmakeWorkers(ctx context.Context) error {
 	})
 }
 
-func (b *TransportBus) SendToClient(ctx context.Context, id uuidstring.ID, msg MatchmakingClientMessage) error {
+func (b *TransportBus) SendToClient(ctx context.Context, clientId uuidstring.ID, msg MatchmakingClientMessage) error {
 	bytes, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -79,8 +82,11 @@ func (b *TransportBus) SendToClient(ctx context.Context, id uuidstring.ID, msg M
 		md[metadata.TransitionTo] = metadata.Game
 		md[metadata.RoomIDKey] = metadata.MetaDataValue(roomFullMsg.RoomID.String())
 	}
+	md[metadata.DestinationID] = metadata.MetaDataValue(clientId)
+	//TODO receive destination hostname here?
+	var gatewayInstanceName string
 
-	return b.transportBus.SendTo(ctx, ClientMessageProducer, id, &message.Envelope{
+	return b.transportBus.SendTo(ctx, ClientMessageProducer, gatewayInstanceName, &message.Envelope{
 		Type:     message.MatchmakingService,
 		Payload:  bytes,
 		MetaData: md,
@@ -100,7 +106,8 @@ func NewRedisMatchmakingServerMessageConsumer(ctx context.Context, rdb *redis.Cl
 }
 
 func NewRedisClientMessageProducer(rdb *redis.Client) *transport.RedisDynamicMessageProducer {
-	return transport.NewRedisDynamicMessageProducer(rdb, rediskeys.MatchmakingClientMessageStream)
+	//return transport.NewRedisMessageProducer(rdb, rediskeys.MatchmakingClientMessageStreamDestination)
+	return transport.NewRedisDynamicMessageProducer(rdb, rediskeys.MatchmakingClientMessageStreamDestination)
 }
 
 func NewRedisWorkerNotifierBroadcastProducer(rdb *redis.Client) *transport.RedisBroadcastProducer {
